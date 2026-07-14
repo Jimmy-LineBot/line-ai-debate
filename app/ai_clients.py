@@ -1,7 +1,6 @@
 import os
 import asyncio
 import httpx
-import traceback
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -52,7 +51,7 @@ async def call_llama(prompt, system_prompt=""):
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
     payload = {
-        "model": "llama-3.1-70b-versatile",
+        "model": "llama-3.3-70b-versatile",
         "messages": messages,
         "temperature": 0.8,
         "max_tokens": 1024,
@@ -69,6 +68,8 @@ async def call_llama(prompt, system_prompt=""):
                 if response.status_code == 429:
                     await asyncio.sleep(5 * (attempt + 1))
                     continue
+                if response.status_code != 200:
+                    print("Llama body: " + response.text[:200])
                 response.raise_for_status()
                 data = response.json()
                 return data["choices"][0]["message"]["content"]
@@ -81,17 +82,15 @@ async def call_llama(prompt, system_prompt=""):
     return "Llama unavailable"
 
 async def call_cohere(prompt, system_prompt=""):
-    url = "https://api.cohere.com/v2/chat"
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
+    url = "https://api.cohere.com/v1/chat"
     payload = {
         "model": "command-r-plus",
-        "messages": messages,
+        "message": prompt,
         "temperature": 0.8,
         "max_tokens": 1024,
     }
+    if system_prompt:
+        payload["preamble"] = system_prompt
     headers = {
         "Authorization": "Bearer " + COHERE_API_KEY,
         "Content-Type": "application/json",
@@ -104,9 +103,11 @@ async def call_cohere(prompt, system_prompt=""):
                 if response.status_code == 429:
                     await asyncio.sleep(5 * (attempt + 1))
                     continue
+                if response.status_code != 200:
+                    print("Cohere body: " + response.text[:200])
                 response.raise_for_status()
                 data = response.json()
-                return data["message"]["content"][0]["text"]
+                return data["text"]
         except Exception as e:
             print("Cohere error: " + str(e))
             if attempt < 2:
