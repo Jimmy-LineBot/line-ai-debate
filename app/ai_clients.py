@@ -84,7 +84,7 @@ async def call_llama(prompt, system_prompt=""):
 async def call_cohere(prompt, system_prompt=""):
     url = "https://api.cohere.com/v1/chat"
     payload = {
-        "model": "command-r",
+        "model": "command-a-03-2025",
         "message": prompt,
         "temperature": 0.8,
         "max_tokens": 1024,
