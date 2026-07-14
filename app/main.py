@@ -1,8 +1,3 @@
-到 GitHub 打開 app/main.py
-點右上角 「...」 → 「Delete file」 → Commit
-重新 「Add file」 → 「Create new file」
-檔名：app/main.py
-貼上以下完整內容：
 import os
 import asyncio
 from fastapi import FastAPI, Request, HTTPException
@@ -51,7 +46,7 @@ async def webhook(request: Request):
         user_text = event.message.text.strip()
         is_question = (
             user_text.endswith("?")
-            or user_text.endswith("？")
+            or user_text.endswith("\uff1f")
             or user_text.startswith("/ask")
         )
 
@@ -61,12 +56,9 @@ async def webhook(request: Request):
             else:
                 question = user_text
 
-            reply_text = (
-                "收到問題：" + question + "
+            reply_text = "收到問題：" + question + "
 
-"
-                "3 個 AI 正在進行討論，請稍候約 15-30 秒..."
-            )
+3個AI正在討論，請稍候..."
 
             async with AsyncApiClient(configuration) as api_client:
                 messaging_api = AsyncMessagingApi(api_client)
@@ -112,7 +104,7 @@ async def run_debate_and_reply(source_id, question):
             await messaging_api.push_message(
                 PushMessageRequest(
                     to=source_id,
-                    messages=[TextMessage(text="發生錯誤：" + str(e))],
+                    messages=[TextMessage(text="Error: " + str(e))],
                 )
             )
 
