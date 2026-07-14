@@ -22,6 +22,8 @@ async def run_debate(question):
     r1_llama = str(r1_llama) if isinstance(r1_llama, Exception) else r1_llama
     r1_cohere = str(r1_cohere) if isinstance(r1_cohere, Exception) else r1_cohere
 
+    await asyncio.sleep(5)
+
     sys2 = "You are a debate expert. You MUST disagree or find flaws in the other opinions. Reply in Traditional Chinese."
 
     r2_base = "Original question: " + question + NL + NL
