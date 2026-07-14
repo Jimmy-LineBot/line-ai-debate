@@ -1,6 +1,7 @@
 import os
 import asyncio
 import httpx
+import traceback
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -29,13 +30,15 @@ async def call_gemini(prompt, system_prompt=""):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, json=payload)
+                print("Gemini status: " + str(response.status_code))
                 if response.status_code == 429:
                     await asyncio.sleep(5 * (attempt + 1))
                     continue
                 response.raise_for_status()
                 data = response.json()
                 return data["candidates"][0]["content"]["parts"][0]["text"]
-        except Exception:
+        except Exception as e:
+            print("Gemini error: " + str(e))
             if attempt < 2:
                 await asyncio.sleep(3)
                 continue
@@ -62,13 +65,15 @@ async def call_llama(prompt, system_prompt=""):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, json=payload, headers=headers)
+                print("Llama status: " + str(response.status_code))
                 if response.status_code == 429:
                     await asyncio.sleep(5 * (attempt + 1))
                     continue
                 response.raise_for_status()
                 data = response.json()
                 return data["choices"][0]["message"]["content"]
-        except Exception:
+        except Exception as e:
+            print("Llama error: " + str(e))
             if attempt < 2:
                 await asyncio.sleep(3)
                 continue
@@ -95,13 +100,15 @@ async def call_cohere(prompt, system_prompt=""):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, json=payload, headers=headers)
+                print("Cohere status: " + str(response.status_code))
                 if response.status_code == 429:
                     await asyncio.sleep(5 * (attempt + 1))
                     continue
                 response.raise_for_status()
                 data = response.json()
                 return data["message"]["content"][0]["text"]
-        except Exception:
+        except Exception as e:
+            print("Cohere error: " + str(e))
             if attempt < 2:
                 await asyncio.sleep(3)
                 continue
