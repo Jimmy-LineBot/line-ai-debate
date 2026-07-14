@@ -1,4 +1,5 @@
 import os
+import asyncio
 import httpx
 from dotenv import load_dotenv
 
@@ -24,14 +25,22 @@ async def call_gemini(prompt, system_prompt=""):
         "temperature": 0.8,
         "maxOutputTokens": 1024,
     }
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+    for attempt in range(3):
         try:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError):
-            return "Gemini no response"
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, json=payload)
+                if response.status_code == 429:
+                    await asyncio.sleep(5 * (attempt + 1))
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception:
+            if attempt < 2:
+                await asyncio.sleep(3)
+                continue
+            return "Gemini unavailable"
+    return "Gemini unavailable"
 
 async def call_llama(prompt, system_prompt=""):
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -49,14 +58,22 @@ async def call_llama(prompt, system_prompt=""):
         "Authorization": "Bearer " + GROQ_API_KEY,
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        data = response.json()
+    for attempt in range(3):
         try:
-            return data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError):
-            return "Llama no response"
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                if response.status_code == 429:
+                    await asyncio.sleep(5 * (attempt + 1))
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+        except Exception:
+            if attempt < 2:
+                await asyncio.sleep(3)
+                continue
+            return "Llama unavailable"
+    return "Llama unavailable"
 
 async def call_cohere(prompt, system_prompt=""):
     url = "https://api.cohere.com/v2/chat"
@@ -74,11 +91,19 @@ async def call_cohere(prompt, system_prompt=""):
         "Authorization": "Bearer " + COHERE_API_KEY,
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        data = response.json()
+    for attempt in range(3):
         try:
-            return data["message"]["content"][0]["text"]
-        except (KeyError, IndexError):
-            return "Cohere no response"
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                if response.status_code == 429:
+                    await asyncio.sleep(5 * (attempt + 1))
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                return data["message"]["content"][0]["text"]
+        except Exception:
+            if attempt < 2:
+                await asyncio.sleep(3)
+                continue
+            return "Cohere unavailable"
+    return "Cohere unavailable"
