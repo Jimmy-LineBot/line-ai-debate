@@ -25,7 +25,7 @@ parser = WebhookParser(channel_secret)
 
 @app.get("/")
 async def root():
-    return {"status": "LINE AI Debate Bot is running!"}
+    return {"status": "running"}
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -50,35 +50,41 @@ async def webhook(request: Request):
             or user_text.startswith("/ask")
         )
 
-        if is_question:
-            if user_text.startswith("/ask"):
-                question = user_text[4:].strip()
-            else:
-                question = user_text
+        if not is_question:
+            continue
 
-            reply_text = "收到問題：" + question + "
+        if user_text.startswith("/ask"):
+            question = user_text[4:].strip()
+        else:
+            question = user_text
+
+        reply_text = (
+            "收到問題："
+            + question
+            + "
 
 3個AI正在討論，請稍候..."
+        )
 
-            async with AsyncApiClient(configuration) as api_client:
-                messaging_api = AsyncMessagingApi(api_client)
-                await messaging_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text=reply_text)],
-                    )
+        async with AsyncApiClient(configuration) as api_client:
+            messaging_api = AsyncMessagingApi(api_client)
+            await messaging_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_text)],
                 )
+            )
 
-            source_id = None
-            if hasattr(event.source, "group_id"):
-                source_id = event.source.group_id
-            elif hasattr(event.source, "user_id"):
-                source_id = event.source.user_id
+        source_id = None
+        if hasattr(event.source, "group_id"):
+            source_id = event.source.group_id
+        elif hasattr(event.source, "user_id"):
+            source_id = event.source.user_id
 
-            if source_id:
-                asyncio.create_task(
-                    run_debate_and_reply(source_id, question)
-                )
+        if source_id:
+            asyncio.create_task(
+                run_debate_and_reply(source_id, question)
+            )
 
     return "OK"
 
@@ -89,22 +95,23 @@ async def run_debate_and_reply(source_id, question):
         result = await run_debate(question)
         async with AsyncApiClient(configuration) as api_client:
             messaging_api = AsyncMessagingApi(api_client)
-            messages = split_message(result)
-            for msg in messages:
+            msgs = split_message(result)
+            for m in msgs:
                 await messaging_api.push_message(
                     PushMessageRequest(
                         to=source_id,
-                        messages=[TextMessage(text=msg)],
+                        messages=[TextMessage(text=m)],
                     )
                 )
                 await asyncio.sleep(0.5)
     except Exception as e:
+        err = "Error: " + str(e)
         async with AsyncApiClient(configuration) as api_client:
             messaging_api = AsyncMessagingApi(api_client)
             await messaging_api.push_message(
                 PushMessageRequest(
                     to=source_id,
-                    messages=[TextMessage(text="Error: " + str(e))],
+                    messages=[TextMessage(text=err)],
                 )
             )
 
@@ -116,15 +123,16 @@ def split_message(text, max_length=4500):
         if len(text) <= max_length:
             messages.append(text)
             break
-        split_point = text.rfind("
+        sp = text.rfind("
 ", 0, max_length)
-        if split_point == -1:
-            split_point = max_length
-        messages.append(text[:split_point])
-        text = text[split_point:].lstrip("
+        if sp == -1:
+            sp = max_length
+        messages.append(text[:sp])
+        text = text[sp:].lstrip("
 ")
     return messages
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
