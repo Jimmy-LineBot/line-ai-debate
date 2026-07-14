@@ -1,26 +1,33 @@
 import os
 import asyncio
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI
+from fastapi import Request
+from fastapi import HTTPException
 from linebot.v3 import WebhookParser
-from linebot.v3.messaging import (
-    AsyncApiClient,
-    AsyncMessagingApi,
-    Configuration,
-    ReplyMessageRequest,
-    PushMessageRequest,
-    TextMessage,
-)
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.messaging import AsyncApiClient
+from linebot.v3.messaging import AsyncMessagingApi
+from linebot.v3.messaging import Configuration
+from linebot.v3.messaging import ReplyMessageRequest
+from linebot.v3.messaging import PushMessageRequest
+from linebot.v3.messaging import TextMessage
+from linebot.v3.webhooks import MessageEvent
+from linebot.v3.webhooks import TextMessageContent
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = FastAPI()
 
-channel_secret = os.getenv("LINE_CHANNEL_SECRET", "")
-channel_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+channel_secret = os.getenv(
+    "LINE_CHANNEL_SECRET", ""
+)
+channel_access_token = os.getenv(
+    "LINE_CHANNEL_ACCESS_TOKEN", ""
+)
 
-configuration = Configuration(access_token=channel_access_token)
+configuration = Configuration(
+    access_token=channel_access_token
+)
 parser = WebhookParser(channel_secret)
 
 @app.get("/")
@@ -29,28 +36,32 @@ async def root():
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    signature = request.headers.get("X-Line-Signature", "")
+    signature = request.headers.get(
+        "X-Line-Signature", ""
+    )
     body = (await request.body()).decode("utf-8")
 
     try:
         events = parser.parse(body, signature)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400, detail=str(e)
+        )
 
     for event in events:
         if not isinstance(event, MessageEvent):
             continue
-        if not isinstance(event.message, TextMessageContent):
+        if not isinstance(
+            event.message, TextMessageContent
+        ):
             continue
 
         user_text = event.message.text.strip()
-        is_question = (
-            user_text.endswith("?")
-            or user_text.endswith("\uff1f")
-            or user_text.startswith("/ask")
-        )
+        is_q = user_text.endswith("?")
+        is_q = is_q or user_text.endswith("\uff1f")
+        is_q = is_q or user_text.startswith("/ask")
 
-        if not is_question:
+        if not is_q:
             continue
 
         if user_text.startswith("/ask"):
@@ -58,20 +69,22 @@ async def webhook(request: Request):
         else:
             question = user_text
 
-        reply_text = (
-            "收到問題："
-            + question
-            + "
+        part1 = "收到："
+        part2 = "
 
-3個AI正在討論，請稍候..."
-        )
+AI討論中請稍候..."
+        reply_text = part1 + question + part2
 
-        async with AsyncApiClient(configuration) as api_client:
-            messaging_api = AsyncMessagingApi(api_client)
-            await messaging_api.reply_message(
+        async with AsyncApiClient(
+            configuration
+        ) as api_client:
+            mapi = AsyncMessagingApi(api_client)
+            await mapi.reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply_text)],
+                    messages=[
+                        TextMessage(text=reply_text)
+                    ],
                 )
             )
 
@@ -83,56 +96,66 @@ async def webhook(request: Request):
 
         if source_id:
             asyncio.create_task(
-                run_debate_and_reply(source_id, question)
+                do_debate(source_id, question)
             )
 
     return "OK"
 
-async def run_debate_and_reply(source_id, question):
+async def do_debate(source_id, question):
     from app.orchestrator import run_debate
 
     try:
         result = await run_debate(question)
-        async with AsyncApiClient(configuration) as api_client:
-            messaging_api = AsyncMessagingApi(api_client)
-            msgs = split_message(result)
+        async with AsyncApiClient(
+            configuration
+        ) as api_client:
+            mapi = AsyncMessagingApi(api_client)
+            msgs = split_msg(result)
             for m in msgs:
-                await messaging_api.push_message(
+                await mapi.push_message(
                     PushMessageRequest(
                         to=source_id,
-                        messages=[TextMessage(text=m)],
+                        messages=[
+                            TextMessage(text=m)
+                        ],
                     )
                 )
                 await asyncio.sleep(0.5)
     except Exception as e:
         err = "Error: " + str(e)
-        async with AsyncApiClient(configuration) as api_client:
-            messaging_api = AsyncMessagingApi(api_client)
-            await messaging_api.push_message(
+        async with AsyncApiClient(
+            configuration
+        ) as api_client:
+            mapi = AsyncMessagingApi(api_client)
+            await mapi.push_message(
                 PushMessageRequest(
                     to=source_id,
-                    messages=[TextMessage(text=err)],
+                    messages=[
+                        TextMessage(text=err)
+                    ],
                 )
             )
 
-def split_message(text, max_length=4500):
-    if len(text) <= max_length:
+def split_msg(text, mx=4500):
+    if len(text) <= mx:
         return [text]
-    messages = []
+    out = []
     while text:
-        if len(text) <= max_length:
-            messages.append(text)
+        if len(text) <= mx:
+            out.append(text)
             break
         sp = text.rfind("
-", 0, max_length)
+", 0, mx)
         if sp == -1:
-            sp = max_length
-        messages.append(text[:sp])
+            sp = mx
+        out.append(text[:sp])
         text = text[sp:].lstrip("
 ")
-    return messages
+    return out
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        app, host="0.0.0.0", port=port
+    )
