@@ -71,7 +71,7 @@ async def run_debate(question):
         + "Gemini rebuttal: " + r2_gemini + NL
         + "Llama rebuttal: " + r2_llama + NL
         + "Command R+ rebuttal: " + r2_cohere + NL + NL
-        + "Now give the FINAL recommendation. Include: 1) Best choice 2) Risks 3) Action steps. Within 300 words."
+        + "Now give the FINAL ANSWER that directly answers the original question. Combine the best parts from all opinions. If the question asks for a plan or list, provide the complete plan or list. Do not just say which opinion is better. Give the actual answer the user needs. Within 500 words."
     )
 
     final = await call_llama(r3_prompt, sys3)
