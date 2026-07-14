@@ -69,11 +69,7 @@ async def webhook(request: Request):
         else:
             question = user_text
 
-        part1 = "收到："
-        part2 = "
-
-AI討論中請稍候..."
-        reply_text = part1 + question + part2
+        reply_text = "Got it! AI discussing..."
 
         async with AsyncApiClient(
             configuration
