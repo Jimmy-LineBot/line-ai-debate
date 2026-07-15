@@ -10,7 +10,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com"
-GEMINI_PATH = "/v1beta/models/gemini-2.5-flash:generateContent"
+GEMINI_PATH = "/v1beta/models/gemini-2.0-flash-lite:generateContent"
 
 async def call_gemini(prompt, system_prompt=""):
     url = GEMINI_BASE + GEMINI_PATH + "?key=" + GOOGLE_AI_API_KEY
