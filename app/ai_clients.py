@@ -15,7 +15,7 @@ async def call_mixtral(prompt, system_prompt=""):
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
     payload = {
-        "model": "gemma2-9b-it",
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
         "messages": messages,
         "temperature": 0.8,
         "max_tokens": 1024,
