@@ -15,7 +15,7 @@ async def call_mixtral(prompt, system_prompt=""):
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
     payload = {
-        "model": "mixtral-8x7b-32768",
+        "model": "gemma2-9b-it",
         "messages": messages,
         "temperature": 0.8,
         "max_tokens": 1024,
