@@ -11,18 +11,18 @@ async def run_debate(question):
 
     r1_prompt = "Please give your analysis and recommendation for this question (within 200 words): " + question
 
-    r1_gemini, r1_llama, r1_cohere = await asyncio.gather(
-        call_gemini(r1_prompt, sys1),
+    r1_gemini = await call_gemini(r1_prompt, sys1)
+
+    r1_llama, r1_cohere = await asyncio.gather(
         call_llama(r1_prompt, sys1),
         call_cohere(r1_prompt, sys1),
         return_exceptions=True,
     )
 
-    r1_gemini = str(r1_gemini) if isinstance(r1_gemini, Exception) else r1_gemini
     r1_llama = str(r1_llama) if isinstance(r1_llama, Exception) else r1_llama
     r1_cohere = str(r1_cohere) if isinstance(r1_cohere, Exception) else r1_cohere
 
-    await asyncio.sleep(15)
+    await asyncio.sleep(20)
 
     sys2 = "You are a debate expert. You MUST disagree or find flaws in the other opinions. Reply in Traditional Chinese."
 
@@ -50,14 +50,14 @@ async def run_debate(question):
         + "You MUST point out what is WRONG or MISSING in their answers. Disagree with at least one point. Add what they missed."
     )
 
-    r2_gemini, r2_llama, r2_cohere = await asyncio.gather(
-        call_gemini(r2_gemini_p, sys2),
+    r2_gemini = await call_gemini(r2_gemini_p, sys2)
+
+    r2_llama, r2_cohere = await asyncio.gather(
         call_llama(r2_llama_p, sys2),
         call_cohere(r2_cohere_p, sys2),
         return_exceptions=True,
     )
 
-    r2_gemini = str(r2_gemini) if isinstance(r2_gemini, Exception) else r2_gemini
     r2_llama = str(r2_llama) if isinstance(r2_llama, Exception) else r2_llama
     r2_cohere = str(r2_cohere) if isinstance(r2_cohere, Exception) else r2_cohere
 
