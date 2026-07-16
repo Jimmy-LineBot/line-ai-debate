@@ -4,36 +4,49 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GOOGLE_SEARCH_API_KEY = os.getenv("GOOGLE_SEARCH_API_KEY", "")
-GOOGLE_SEARCH_CX = os.getenv("GOOGLE_SEARCH_CX", "")
+SEARCH_KEY = os.getenv(
+    "GOOGLE_SEARCH_API_KEY", ""
+)
+SEARCH_CX = os.getenv(
+    "GOOGLE_SEARCH_CX", ""
+)
 
-BASE_URL = "https://www.googleapis.com/customsearch/v1"
+BASE = "https://www.googleapis.com"
+PATH = "/customsearch/v1"
 
-async def web_search(query, num_results=5):
+async def web_search(query, num=5):
+    url = BASE + PATH
     params = {
-        "key": GOOGLE_SEARCH_API_KEY,
-        "cx": GOOGLE_SEARCH_CX,
+        "key": SEARCH_KEY,
+        "cx": SEARCH_CX,
         "q": query,
-        "num": num_results,
+        "num": num,
         "lr": "lang_zh-TW",
     }
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(BASE_URL, params=params)
-            print("Search status: " + str(response.status_code))
-            if response.status_code != 200:
-                print("Search error: " + response.text[:200])
+        async with httpx.AsyncClient(
+            timeout=10.0
+        ) as client:
+            r = await client.get(
+                url, params=params
+            )
+            print(
+                "Search status: "
+                + str(r.status_code)
+            )
+            if r.status_code != 200:
                 return ""
-            data = response.json()
+            data = r.json()
             items = data.get("items", [])
-            results = []
+            out = []
             for item in items:
-                title = item.get("title", "")
-                snippet = item.get("snippet", "")
-                link = item.get("link", "")
-                results.append(title + ": " + snippet + " (" + link + ")")
-            return "
-".join(results)
+                t = item.get("title", "")
+                s = item.get("snippet", "")
+                k = item.get("link", "")
+                line = t + ": " + s
+                out.append(line)
+            joined = chr(10).join(out)
+            return joined
     except Exception as e:
-        print("Search exception: " + str(e))
+        print("Search err: " + str(e))
         return ""
