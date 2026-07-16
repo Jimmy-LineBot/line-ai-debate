@@ -1,21 +1,34 @@
 import logging
-from ddgs import DDGS
+import httpx
+
 logger = logging.getLogger(__name__)
 
+SEARCH_URL = (
+    "https://api.search.brave.com"
+    "/res/v1/web/search"
+)
+
+FALLBACK_URL = (
+    "https://html.duckduckgo.com/html/"
+)
+
 async def web_search(query: str) -> str:
-    """Search with DuckDuckGo."""
+    """Search with DuckDuckGo lite."""
     results = []
     try:
+        from ddgs import DDGS
         with DDGS() as ddgs:
             hits = ddgs.text(
                 query,
                 max_results=5,
-                region="wt-wt",
+                region="tw-tzh",
             )
             for i, h in enumerate(hits, 1):
                 title = h.get("title", "")
                 url = h.get("href", "")
                 body = h.get("body", "")
+                if not url:
+                    continue
                 line = (
                     str(i) + ". "
                     + title + chr(10)
@@ -29,23 +42,27 @@ async def web_search(query: str) -> str:
         )
     if not results:
         logger.warning(
-            "No results for: %s", query
+            "No results for: %s",
+            query,
         )
         return ""
     text = chr(10).join(results)
     logger.info(
-        "Search got %d results", len(results)
+        "Search got %d results for: %s",
+        len(results),
+        query[:50],
     )
     return text
 
 async def check_search_status() -> int:
     """Check if search works."""
     try:
+        from ddgs import DDGS
         with DDGS() as ddgs:
             hits = ddgs.text(
-                "test",
+                "hello",
                 max_results=1,
-                region="wt-wt",
+                region="tw-tzh",
             )
             if hits:
                 return 200
