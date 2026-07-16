@@ -1,52 +1,86 @@
-import os
 import httpx
-from dotenv import load_dotenv
+import logging
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
-SEARCH_KEY = os.getenv(
-    "GOOGLE_SEARCH_API_KEY", ""
-)
-SEARCH_CX = os.getenv(
-    "GOOGLE_SEARCH_CX", ""
-)
+DDG_URL = "https://api.duckduckgo.com/"
 
-BASE = "https://www.googleapis.com"
-PATH = "/customsearch/v1"
-
-async def web_search(query, num=5):
-    url = BASE + PATH
+async def search_web(query: str) -> list:
+    """Search using DuckDuckGo."""
+    results = []
     params = {
-        "key": SEARCH_KEY,
-        "cx": SEARCH_CX,
         "q": query,
-        "num": num,
-        "lr": "lang_zh-TW",
+        "format": "json",
+        "no_html": "1",
+        "skip_disambig": "1",
     }
     try:
         async with httpx.AsyncClient(
-            timeout=10.0
+            timeout=10
         ) as client:
-            r = await client.get(
-                url, params=params
+            resp = await client.get(
+                DDG_URL,
+                params=params,
             )
-            print(
-                "Search status: "
-                + str(r.status_code)
+            if resp.status_code != 200:
+                logger.error(
+                    "DDG error: %s",
+                    resp.status_code,
+                )
+                return []
+            data = resp.json()
+            # Abstract (top result)
+            abstract = data.get("Abstract", "")
+            abs_url = data.get("AbstractURL", "")
+            abs_src = data.get(
+                "AbstractSource", ""
             )
-            if r.status_code != 200:
-                return ""
-            data = r.json()
-            items = data.get("items", [])
-            out = []
-            for item in items:
-                t = item.get("title", "")
-                s = item.get("snippet", "")
-                k = item.get("link", "")
-                line = t + ": " + s
-                out.append(line)
-            joined = chr(10).join(out)
-            return joined
+            if abstract:
+                results.append(
+                    {
+                        "title": abs_src,
+                        "url": abs_url,
+                        "snippet": abstract,
+                    }
+                )
+            # Related topics
+            topics = data.get(
+                "RelatedTopics", []
+            )
+            for t in topics[:5]:
+                text = t.get("Text", "")
+                url = t.get("FirstURL", "")
+                if text and url:
+                    results.append(
+                        {
+                            "title": text[:60],
+                            "url": url,
+                            "snippet": text,
+                        }
+                    )
+                if len(results) >= 5:
+                    break
     except Exception as e:
-        print("Search err: " + str(e))
-        return ""
+        logger.error(
+            "Search failed: %s", e
+        )
+    return results
+
+async def check_search_status() -> int:
+    """Check if DuckDuckGo works."""
+    params = {
+        "q": "test",
+        "format": "json",
+        "no_html": "1",
+    }
+    try:
+        async with httpx.AsyncClient(
+            timeout=10
+        ) as client:
+            resp = await client.get(
+                DDG_URL,
+                params=params,
+            )
+            return resp.status_code
+    except Exception:
+        return 500
