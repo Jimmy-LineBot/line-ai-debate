@@ -8,59 +8,81 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 
-async def call_mixtral(prompt, system_prompt=""):
-    url = "https://api.groq.com/openai/v1/chat/completions"
+async def _groq_call(model, prompt, system_prompt):
+    """Call Groq API with retry on 429."""
+    url = (
+        "https://api.groq.com"
+        "/openai/v1/chat/completions"
+    )
     messages = []
     if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
+        messages.append(
+            {"role": "system",
+             "content": system_prompt}
+        )
+    messages.append(
+        {"role": "user", "content": prompt}
+    )
     payload = {
-        "model": "openai/gpt-oss-120b",
+        "model": model,
         "messages": messages,
         "temperature": 0.8,
         "max_tokens": 1024,
     }
     headers = {
-        "Authorization": "Bearer " + GROQ_API_KEY,
+        "Authorization": "Bearer "
+        + GROQ_API_KEY,
         "Content-Type": "application/json",
     }
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            print("Mixtral status: " + str(response.status_code))
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-    except Exception as e:
-        print("Mixtral error: " + str(e))
-        return "Mixtral unavailable"
+    last_err = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(
+                timeout=60.0
+            ) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                )
+                print(
+                    model + " status: "
+                    + str(resp.status_code)
+                )
+                if resp.status_code == 429:
+                    wait = 3 * (attempt + 1)
+                    print(
+                        model + " 429, wait "
+                        + str(wait) + "s"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                return (
+                    data["choices"][0]
+                    ["message"]["content"]
+                )
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                await asyncio.sleep(2)
+    print(model + " error: " + str(last_err))
+    return model + " unavailable"
+
+async def call_mixtral(prompt, system_prompt=""):
+    return await _groq_call(
+        "openai/gpt-oss-120b",
+        prompt,
+        system_prompt,
+    )
 
 async def call_llama(prompt, system_prompt=""):
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": messages,
-        "temperature": 0.8,
-        "max_tokens": 1024,
-    }
-    headers = {
-        "Authorization": "Bearer " + GROQ_API_KEY,
-        "Content-Type": "application/json",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            print("Llama status: " + str(response.status_code))
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-    except Exception as e:
-        print("Llama error: " + str(e))
-        return "Llama unavailable"
+    return await _groq_call(
+        "llama-3.3-70b-versatile",
+        prompt,
+        system_prompt,
+    )
 
 async def call_cohere(prompt, system_prompt=""):
     url = "https://api.cohere.com/v1/chat"
@@ -73,15 +95,25 @@ async def call_cohere(prompt, system_prompt=""):
     if system_prompt:
         payload["preamble"] = system_prompt
     headers = {
-        "Authorization": "Bearer " + COHERE_API_KEY,
+        "Authorization": "Bearer "
+        + COHERE_API_KEY,
         "Content-Type": "application/json",
     }
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            print("Cohere status: " + str(response.status_code))
-            response.raise_for_status()
-            data = response.json()
+        async with httpx.AsyncClient(
+            timeout=60.0
+        ) as client:
+            resp = await client.post(
+                url,
+                json=payload,
+                headers=headers,
+            )
+            print(
+                "Cohere status: "
+                + str(resp.status_code)
+            )
+            resp.raise_for_status()
+            data = resp.json()
             return data["text"]
     except Exception as e:
         print("Cohere error: " + str(e))
