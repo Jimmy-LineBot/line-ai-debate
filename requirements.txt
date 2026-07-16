@@ -4,4 +4,3 @@ line-bot-sdk==3.5.1
 httpx==0.25.2
 python-dotenv==1.0.0
 pydantic==2.5.2
-ddgs
