@@ -5,7 +5,7 @@ logger = logging.getLogger(__name__)
 
 DDG_URL = "https://api.duckduckgo.com/"
 
-async def search_web(query: str) -> list:
+async def web_search(query: str) -> list:
     """Search using DuckDuckGo."""
     results = []
     params = {
