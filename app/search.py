@@ -55,7 +55,7 @@ def extract_keywords(query):
         short = " ".join(parts[:7])
     return short
 
-async def _serpapi_search(query, num=5):
+async def _serpapi_search(query, num=6):
     """Call SerpAPI Google search."""
     if not SERPAPI_KEY:
         logger.error("No SERPAPI_KEY set")
@@ -125,34 +125,27 @@ async def web_search(query):
     )
     return chr(10).join(results)
 
-async def web_search_multi(query, n=3):
-    """Search multiple angles."""
+async def web_search_split(query):
+    """Search once, split results for 3 AIs."""
     short_q = extract_keywords(query)
-    logger.info(
-        "Multi-search base: %s", short_q
+    logger.info("Search query: %s", short_q)
+    results = await _serpapi_search(
+        short_q, num=6
     )
-    parts = short_q.split(" ")
-
-    queries = [short_q]
-    if len(parts) >= 4:
-        q2 = " ".join(parts[:3])
-        queries.append(q2)
-        q3 = " ".join(parts[2:5])
-        queries.append(q3)
-    else:
-        queries.append(short_q)
-        queries.append(short_q)
-
-    all_results = []
-    for q in queries[:n]:
-        hits = await _serpapi_search(q, num=3)
-        if hits:
-            all_results.append(
-                chr(10).join(hits)
-            )
-        else:
-            all_results.append("")
-    return all_results
+    if not results:
+        logger.warning(
+            "No results for: %s", short_q
+        )
+        return ["", "", ""]
+    # Split: AI-A gets 1,2,3
+    # AI-B gets 3,4,5
+    # AI-C gets 1,4,5,6
+    a = chr(10).join(results[:3])
+    b = chr(10).join(results[2:5])
+    c = chr(10).join(
+        results[:1] + results[3:]
+    )
+    return [a, b, c]
 
 async def check_search_status():
     """Check if SerpAPI works."""
