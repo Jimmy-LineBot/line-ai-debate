@@ -1,6 +1,5 @@
 import logging
-from duckduckgo_search import DDGS
-
+from ddgs import DDGS
 logger = logging.getLogger(__name__)
 
 async def web_search(query: str) -> str:
