@@ -30,8 +30,13 @@ def make_search_ctx(text):
         )
     return NL + NO_SEARCH_NOTE + NL
 
+def shorten(text, limit=300):
+    """Shorten text to limit chars."""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
 async def run_debate(question):
-    # Search 3 different angles
     search_list = await web_search_multi(
         question, n=3
     )
@@ -65,64 +70,69 @@ async def run_debate(question):
         + question + NL + ctx_c
     )
 
-    r1_mixtral, r1_llama, r1_cohere = (
-        await asyncio.gather(
-            call_mixtral(r1_prompt_a, sys1),
-            call_llama(r1_prompt_b, sys1),
-            call_cohere(r1_prompt_c, sys1),
-        )
+    # Round 1: Mixtral first, then Llama
+    # Cohere in parallel with Llama
+    r1_mixtral = await call_mixtral(
+        r1_prompt_a, sys1
+    )
+    await asyncio.sleep(2)
+    r1_llama, r1_cohere = await asyncio.gather(
+        call_llama(r1_prompt_b, sys1),
+        call_cohere(r1_prompt_c, sys1),
     )
 
-    # Delay to avoid 429
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
 
     sys2 = (
         "You are a debate expert."
         " You MUST disagree or find flaws."
         " Reply in Traditional Chinese."
         " NEVER invent URLs or store names."
-        " If they cited unverified URLs,"
-        " call them out."
+        " Be concise (within 200 words)."
     )
 
     all_ctx = make_search_ctx(
         search_list[0]
     )
 
-    r2_base = (
-        "Original question: "
-        + question + NL + all_ctx + NL
-    )
+    # Shorten Round 1 for Round 2 prompts
+    s_mixtral = shorten(r1_mixtral)
+    s_llama = shorten(r1_llama)
+    s_cohere = shorten(r1_cohere)
 
     r2_mixtral_p = (
-        r2_base
-        + "Opinion A: " + r1_llama + NL + NL
-        + "Opinion B: " + r1_cohere + NL + NL
+        "Question: " + question + NL
+        + all_ctx + NL
+        + "Opinion A: " + s_llama + NL + NL
+        + "Opinion B: " + s_cohere + NL + NL
         + "Point out what is WRONG."
     )
     r2_llama_p = (
-        r2_base
-        + "Opinion A: " + r1_mixtral + NL + NL
-        + "Opinion B: " + r1_cohere + NL + NL
+        "Question: " + question + NL
+        + all_ctx + NL
+        + "Opinion A: " + s_mixtral + NL + NL
+        + "Opinion B: " + s_cohere + NL + NL
         + "Point out what is WRONG."
     )
     r2_cohere_p = (
-        r2_base
-        + "Opinion A: " + r1_mixtral + NL + NL
-        + "Opinion B: " + r1_llama + NL + NL
+        "Question: " + question + NL
+        + all_ctx + NL
+        + "Opinion A: " + s_mixtral + NL + NL
+        + "Opinion B: " + s_llama + NL + NL
         + "Point out what is WRONG."
     )
 
-    r2_mixtral, r2_llama, r2_cohere = (
-        await asyncio.gather(
-            call_mixtral(r2_mixtral_p, sys2),
-            call_llama(r2_llama_p, sys2),
-            call_cohere(r2_cohere_p, sys2),
-        )
+    # Round 2: Mixtral first, then Llama
+    r2_mixtral = await call_mixtral(
+        r2_mixtral_p, sys2
+    )
+    await asyncio.sleep(2)
+    r2_llama, r2_cohere = await asyncio.gather(
+        call_llama(r2_llama_p, sys2),
+        call_cohere(r2_cohere_p, sys2),
     )
 
-    # Delay to avoid 429
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
 
     sys3 = (
         "You are a senior debate expert."
@@ -133,30 +143,36 @@ async def run_debate(question):
         " Be brief (within 150 words)."
     )
 
+    # Shorten for Round 3
+    s2_mixtral = shorten(r2_mixtral)
+    s2_llama = shorten(r2_llama)
+    s2_cohere = shorten(r2_cohere)
+
     r3_all = (
-        "Original question: "
-        + question + NL + all_ctx + NL
-        + "=== Round 1 ===" + NL
-        + "Mixtral: " + r1_mixtral + NL
-        + "Llama: " + r1_llama + NL
-        + "Command R+: " + r1_cohere + NL + NL
-        + "=== Round 2 ===" + NL
-        + "Mixtral: " + r2_mixtral + NL
-        + "Llama: " + r2_llama + NL
-        + "Command R+: " + r2_cohere + NL + NL
+        "Question: " + question + NL
+        + all_ctx + NL
+        + "Round 1:" + NL
+        + "Mixtral: " + s_mixtral + NL
+        + "Llama: " + s_llama + NL
+        + "Cohere: " + s_cohere + NL + NL
+        + "Round 2:" + NL
+        + "Mixtral: " + s2_mixtral + NL
+        + "Llama: " + s2_llama + NL
+        + "Cohere: " + s2_cohere + NL + NL
         + "Give your FINAL rebuttal."
     )
 
-    r3_mixtral, r3_llama, r3_cohere = (
-        await asyncio.gather(
-            call_mixtral(r3_all, sys3),
-            call_llama(r3_all, sys3),
-            call_cohere(r3_all, sys3),
-        )
+    # Round 3: Mixtral first, then Llama
+    r3_mixtral = await call_mixtral(
+        r3_all, sys3
+    )
+    await asyncio.sleep(2)
+    r3_llama, r3_cohere = await asyncio.gather(
+        call_llama(r3_all, sys3),
+        call_cohere(r3_all, sys3),
     )
 
-    # Delay before final
-    await asyncio.sleep(3)
+    await asyncio.sleep(10)
 
     sys4 = (
         "You are a final judge."
@@ -175,18 +191,20 @@ async def run_debate(question):
     r4_prompt = (
         "Question: " + question + NL
         + all_ctx + NL
-        + "=== Round 1 ===" + NL
-        + "Mixtral: " + r1_mixtral + NL
-        + "Llama: " + r1_llama + NL
-        + "Command R+: " + r1_cohere + NL + NL
-        + "=== Round 2 ===" + NL
-        + "Mixtral: " + r2_mixtral + NL
-        + "Llama: " + r2_llama + NL
-        + "Command R+: " + r2_cohere + NL + NL
-        + "=== Round 3 ===" + NL
-        + "Mixtral: " + r3_mixtral + NL
-        + "Llama: " + r3_llama + NL
-        + "Command R+: " + r3_cohere + NL + NL
+        + "Round 1:" + NL
+        + "Mixtral: " + s_mixtral + NL
+        + "Llama: " + s_llama + NL
+        + "Cohere: " + s_cohere + NL + NL
+        + "Round 2:" + NL
+        + "Mixtral: " + s2_mixtral + NL
+        + "Llama: " + s2_llama + NL
+        + "Cohere: " + s2_cohere + NL + NL
+        + "Round 3:" + NL
+        + "Mixtral: " + shorten(r3_mixtral)
+        + NL
+        + "Llama: " + shorten(r3_llama) + NL
+        + "Cohere: " + shorten(r3_cohere)
+        + NL + NL
         + "Give the FINAL ANSWER."
     )
 
