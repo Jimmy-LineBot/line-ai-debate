@@ -1,129 +1,151 @@
+import os
 import logging
-from ddgs import DDGS
+import httpx
 
 logger = logging.getLogger(__name__)
 
-REMOVE_WORDS = [
-    chr(35531) + chr(25512) + chr(34214),
-    chr(35531) + chr(21839),
-    chr(25512) + chr(34214),
-    chr(25105) + chr(38656) + chr(35201),
-    chr(25105) + chr(24819) + chr(35201),
-    chr(25105) + chr(35201),
-    chr(21487) + chr(20197),
-    chr(26368) + chr(22909) + chr(26159),
-    chr(26368) + chr(22909),
-    chr(35201) + chr(26377),
-    chr(30452) + chr(25509) + chr(32102) + chr(25105),
-    chr(30475) + chr(26377) + chr(27794) + chr(26377),
-    chr(26377) + chr(27794) + chr(26377),
-    chr(21738) + chr(20491) + chr(32178) + chr(31449),
-    chr(35201) + chr(21435) + chr(21738) + chr(20491)
-    + chr(32178) + chr(31449) + chr(36023),
-    chr(32178) + chr(31449),
-    chr(30452) + chr(25509) + chr(32102)
-    + chr(25105) + chr(32178) + chr(22336),
-    chr(20320) + chr(20497) + chr(25512)
-    + chr(34214),
-    chr(25512) + chr(34214) + chr(30340),
-]
-
-PUNCT_CHARS = [
-    "?", "!", chr(12290), chr(65292),
-    ",", chr(12289), chr(10), chr(65311),
-    chr(65281),
-]
+SERPAPI_KEY = os.getenv("SERPAPI_KEY", "")
+SERP_URL = "https://serpapi.com/search"
 
 def extract_keywords(query):
     """Shorten query for search."""
+    removes = [
+        chr(35531) + chr(25512) + chr(34214),
+        chr(35531) + chr(21839),
+        chr(25512) + chr(34214),
+        chr(25105) + chr(38656) + chr(35201),
+        chr(25105) + chr(24819) + chr(35201),
+        chr(25105) + chr(35201),
+        chr(21487) + chr(20197),
+        chr(26368) + chr(22909) + chr(26159),
+        chr(26368) + chr(22909),
+        chr(35201) + chr(26377),
+        chr(30452) + chr(25509) + chr(32102)
+        + chr(25105),
+        chr(30475) + chr(26377) + chr(27794)
+        + chr(26377),
+        chr(26377) + chr(27794) + chr(26377),
+        chr(21738) + chr(20491) + chr(32178)
+        + chr(31449),
+        chr(35201) + chr(21435) + chr(21738)
+        + chr(20491) + chr(32178) + chr(31449)
+        + chr(36023),
+        chr(32178) + chr(31449),
+        chr(30452) + chr(25509) + chr(32102)
+        + chr(25105) + chr(32178) + chr(22336),
+        chr(20320) + chr(20497) + chr(25512)
+        + chr(34214),
+        chr(25512) + chr(34214) + chr(30340),
+    ]
+    puncts = [
+        "?", "!", chr(12290), chr(65292),
+        ",", chr(12289), chr(10),
+        chr(65311), chr(65281),
+    ]
     short = query
-    for r in REMOVE_WORDS:
+    for r in removes:
         short = short.replace(r, " ")
-    for p in PUNCT_CHARS:
+    for p in puncts:
         short = short.replace(p, " ")
     while "  " in short:
         short = short.replace("  ", " ")
     short = short.strip()
-    if len(short) > 40:
+    if len(short) > 50:
         parts = short.split(" ")
-        short = " ".join(parts[:6])
+        short = " ".join(parts[:7])
     return short
 
-def _do_search(query, max_results=5):
-    """Run search with fallback backends."""
+async def _serpapi_search(query, num=5):
+    """Call SerpAPI Google search."""
+    if not SERPAPI_KEY:
+        logger.error("No SERPAPI_KEY set")
+        return []
+    params = {
+        "q": query,
+        "api_key": SERPAPI_KEY,
+        "engine": "google",
+        "num": num,
+        "hl": "zh-TW",
+        "gl": "tw",
+    }
     results = []
-    backends = ["google", "brave"]
-    for be in backends:
-        try:
-            with DDGS() as ddgs:
-                hits = ddgs.text(
-                    query,
-                    max_results=max_results,
-                    backend=be,
-                )
-                if not hits:
-                    continue
-                for i, h in enumerate(hits, 1):
-                    title = h.get("title", "")
-                    url = h.get("href", "")
-                    body = h.get("body", "")
-                    if not url:
-                        continue
-                    line = (
-                        str(i) + ". "
-                        + title + chr(10)
-                        + "   " + url + chr(10)
-                        + "   " + body
-                    )
-                    results.append(line)
-                if results:
-                    logger.info(
-                        "Search %s: %d hits",
-                        be, len(results),
-                    )
-                    break
-        except Exception as e:
-            logger.warning(
-                "Search %s failed: %s",
-                be, e,
+    try:
+        async with httpx.AsyncClient(
+            timeout=15
+        ) as client:
+            resp = await client.get(
+                SERP_URL, params=params,
             )
-            continue
+            if resp.status_code != 200:
+                logger.error(
+                    "SerpAPI status: %s",
+                    resp.status_code,
+                )
+                return []
+            data = resp.json()
+            organic = data.get(
+                "organic_results", []
+            )
+            for i, item in enumerate(
+                organic[:num], 1
+            ):
+                title = item.get("title", "")
+                url = item.get("link", "")
+                snippet = item.get(
+                    "snippet", ""
+                )
+                if not url:
+                    continue
+                line = (
+                    str(i) + ". "
+                    + title + chr(10)
+                    + "   " + url + chr(10)
+                    + "   " + snippet
+                )
+                results.append(line)
+    except Exception as e:
+        logger.error(
+            "SerpAPI error: %s", e
+        )
     return results
 
 async def web_search(query):
-    """Search with ddgs metasearch."""
+    """Search with SerpAPI."""
     short_q = extract_keywords(query)
     logger.info("Search query: %s", short_q)
-    results = _do_search(short_q)
+    results = await _serpapi_search(short_q)
     if not results:
         logger.warning(
             "No results for: %s", short_q
         )
         return ""
+    logger.info(
+        "Search got %d results",
+        len(results),
+    )
     return chr(10).join(results)
 
 async def web_search_multi(query, n=3):
-    """Search multiple angles for diverse AI."""
+    """Search multiple angles."""
     short_q = extract_keywords(query)
     logger.info(
         "Multi-search base: %s", short_q
     )
     parts = short_q.split(" ")
 
-    # Generate 3 different queries
     queries = [short_q]
     if len(parts) >= 4:
-        q2 = " ".join(parts[:3]) + " " + chr(25512) + chr(34214)
+        q2 = " ".join(parts[:3])
         queries.append(q2)
-        q3 = " ".join(parts[2:5]) + " " + chr(32178) + chr(36092)
+        q3 = " ".join(parts[2:5])
         queries.append(q3)
     else:
-        queries.append(short_q + " " + chr(25512) + chr(34214))
-        queries.append(short_q + " " + chr(36092) + chr(20729))
+        queries.append(short_q)
+        queries.append(short_q)
 
     all_results = []
     for q in queries[:n]:
-        hits = _do_search(q, max_results=3)
+        hits = await _serpapi_search(q, num=3)
         if hits:
             all_results.append(
                 chr(10).join(hits)
@@ -133,16 +155,22 @@ async def web_search_multi(query, n=3):
     return all_results
 
 async def check_search_status():
-    """Check if search works."""
+    """Check if SerpAPI works."""
+    if not SERPAPI_KEY:
+        return 401
     try:
-        with DDGS() as ddgs:
-            hits = ddgs.text(
-                "hello",
-                max_results=1,
-                backend="google",
+        async with httpx.AsyncClient(
+            timeout=10
+        ) as client:
+            resp = await client.get(
+                SERP_URL,
+                params={
+                    "q": "test",
+                    "api_key": SERPAPI_KEY,
+                    "engine": "google",
+                    "num": 1,
+                },
             )
-            if hits:
-                return 200
-            return 204
+            return resp.status_code
     except Exception:
         return 500
