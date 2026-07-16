@@ -3,7 +3,7 @@ from duckduckgo_search import DDGS
 
 logger = logging.getLogger(__name__)
 
-async def web_search(query: str) -> list:
+async def web_search(query: str) -> str:
     """Search using duckduckgo-search."""
     results = []
     try:
@@ -12,25 +12,24 @@ async def web_search(query: str) -> list:
                 query,
                 max_results=5,
             )
-            for h in hits:
-                results.append(
-                    {
-                        "title": h.get(
-                            "title", ""
-                        ),
-                        "url": h.get(
-                            "href", ""
-                        ),
-                        "snippet": h.get(
-                            "body", ""
-                        ),
-                    }
+            for i, h in enumerate(hits, 1):
+                title = h.get("title", "")
+                url = h.get("href", "")
+                body = h.get("body", "")
+                line = (
+                    str(i) + ". "
+                    + title + chr(10)
+                    + url + chr(10)
+                    + body
                 )
+                results.append(line)
     except Exception as e:
         logger.error(
             "Search failed: %s", e
         )
-    return results
+    if not results:
+        return ""
+    return chr(10).join(results)
 
 async def check_search_status() -> int:
     """Check if search works."""
