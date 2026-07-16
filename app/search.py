@@ -1,5 +1,6 @@
 import os
 import logging
+import random
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ def extract_keywords(query):
         short = " ".join(parts[:7])
     return short
 
-async def _serpapi_search(query, num=6):
+async def _serpapi_search(query, num=30):
     """Call SerpAPI Google search."""
     if not SERPAPI_KEY:
         logger.error("No SERPAPI_KEY set")
@@ -87,7 +88,7 @@ async def _serpapi_search(query, num=6):
                 "organic_results", []
             )
             for i, item in enumerate(
-                organic[:num], 1
+                organic, 1
             ):
                 title = item.get("title", "")
                 url = item.get("link", "")
@@ -126,24 +127,70 @@ async def web_search(query):
     return chr(10).join(results)
 
 async def web_search_split(query):
-    """Search once, split results for 3 AIs."""
+    """Search 30 results, random split to 3 AIs."""
     short_q = extract_keywords(query)
     logger.info("Search query: %s", short_q)
     results = await _serpapi_search(
-        short_q, num=6
+        short_q, num=30
     )
     if not results:
         logger.warning(
             "No results for: %s", short_q
         )
         return ["", "", ""]
-    # Split: AI-A gets 1,2,3
-    # AI-B gets 3,4,5
-    # AI-C gets 1,4,5,6
-    a = chr(10).join(results[:3])
-    b = chr(10).join(results[2:5])
-    c = chr(10).join(
-        results[:1] + results[3:]
+    # Shuffle and split into 3 groups
+    shuffled = results[:]
+    random.shuffle(shuffled)
+    size = len(shuffled) // 3
+    group_a = shuffled[:size]
+    group_b = shuffled[size:size * 2]
+    group_c = shuffled[size * 2:]
+    # Re-number each group
+    a_lines = []
+    for i, line in enumerate(group_a, 1):
+        parts = line.split(chr(10), 1)
+        if len(parts) == 2:
+            old_num_end = parts[0].find(". ")
+            new_line = (
+                str(i) + parts[0][old_num_end:]
+                + chr(10) + parts[1]
+            )
+            a_lines.append(new_line)
+        else:
+            a_lines.append(line)
+    b_lines = []
+    for i, line in enumerate(group_b, 1):
+        parts = line.split(chr(10), 1)
+        if len(parts) == 2:
+            old_num_end = parts[0].find(". ")
+            new_line = (
+                str(i) + parts[0][old_num_end:]
+                + chr(10) + parts[1]
+            )
+            b_lines.append(new_line)
+        else:
+            b_lines.append(line)
+    c_lines = []
+    for i, line in enumerate(group_c, 1):
+        parts = line.split(chr(10), 1)
+        if len(parts) == 2:
+            old_num_end = parts[0].find(". ")
+            new_line = (
+                str(i) + parts[0][old_num_end:]
+                + chr(10) + parts[1]
+            )
+            c_lines.append(new_line)
+        else:
+            c_lines.append(line)
+    a = chr(10).join(a_lines)
+    b = chr(10).join(b_lines)
+    c = chr(10).join(c_lines)
+    logger.info(
+        "Split %d results: %d/%d/%d",
+        len(results),
+        len(group_a),
+        len(group_b),
+        len(group_c),
     )
     return [a, b, c]
 
