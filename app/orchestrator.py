@@ -201,6 +201,10 @@ async def run_debate(question):
     )
 
     final = await call_llama(r4_prompt, sys4)
+    if not final or "unavailable" in final:
+        final = await call_mixtral(
+            r4_prompt, sys4
+        )
 
     output = (
         "AI Discussion Result" + SEP
