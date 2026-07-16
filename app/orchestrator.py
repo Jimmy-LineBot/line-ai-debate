@@ -8,23 +8,25 @@ NL = chr(10)
 SEP = NL + "=" * 20 + NL
 
 NO_SEARCH_NOTE = (
-    "NOTE: No web search results available."
-    " You MUST NOT invent or guess any URL."
-    " If you do not know a real website,"
-    " say you cannot find one."
+    "NOTE: No search results found."
+    " You MUST NOT invent any URL."
+    " If you cannot find a real website,"
+    " say so and suggest search keywords"
+    " the user can try on Google."
     " Do NOT make up store names or links."
 )
 
 async def run_debate(question):
-    search_results = await web_search(question)
+    search_results = await web_search(
+        question
+    )
 
     search_context = ""
     if search_results:
         search_context = (
             NL
             + "=== Web Search Results ==="
-            + NL
-            + search_results + NL
+            + NL + search_results + NL
             + "=== End Search Results ==="
             + NL + NL
             + "IMPORTANT: Only use URLs from"
@@ -32,7 +34,9 @@ async def run_debate(question):
             + " Do NOT invent URLs." + NL
         )
     else:
-        search_context = NL + NO_SEARCH_NOTE + NL
+        search_context = (
+            NL + NO_SEARCH_NOTE + NL
+        )
 
     sys1 = (
         "You are an expert analyst."
@@ -48,8 +52,7 @@ async def run_debate(question):
 
     r1_prompt = (
         "Please give your analysis and"
-        " recommendation for this question"
-        " (within 200 words): "
+        " recommendation (within 200 words): "
         + question + NL + search_context
     )
 
@@ -66,11 +69,9 @@ async def run_debate(question):
         " You MUST disagree or find flaws"
         " in the other opinions."
         " Reply in Traditional Chinese."
-        " Base your rebuttal on facts and"
-        " the search results provided."
         " NEVER invent URLs or store names."
-        " If you cannot verify a URL,"
-        " point out it may be fake."
+        " If they cited unverified URLs,"
+        " call them out."
     )
 
     r2_base = (
@@ -81,39 +82,21 @@ async def run_debate(question):
 
     r2_mixtral_p = (
         r2_base
-        + "Here are two other AI opinions:"
-        + NL
         + "Opinion A: " + r1_llama + NL + NL
         + "Opinion B: " + r1_cohere + NL + NL
-        + "You MUST point out what is WRONG"
-        + " or MISSING in their answers."
-        + " If they provide unverified URLs,"
-        + " call them out."
-        + " Add what they missed."
+        + "Point out what is WRONG."
     )
     r2_llama_p = (
         r2_base
-        + "Here are two other AI opinions:"
-        + NL
         + "Opinion A: " + r1_mixtral + NL + NL
         + "Opinion B: " + r1_cohere + NL + NL
-        + "You MUST point out what is WRONG"
-        + " or MISSING in their answers."
-        + " If they provide unverified URLs,"
-        + " call them out."
-        + " Add what they missed."
+        + "Point out what is WRONG."
     )
     r2_cohere_p = (
         r2_base
-        + "Here are two other AI opinions:"
-        + NL
         + "Opinion A: " + r1_mixtral + NL + NL
         + "Opinion B: " + r1_llama + NL + NL
-        + "You MUST point out what is WRONG"
-        + " or MISSING in their answers."
-        + " If they provide unverified URLs,"
-        + " call them out."
-        + " Add what they missed."
+        + "Point out what is WRONG."
     )
 
     r2_mixtral, r2_llama, r2_cohere = (
@@ -126,29 +109,25 @@ async def run_debate(question):
 
     sys3 = (
         "You are a senior debate expert."
-        " Review ALL previous opinions and"
-        " rebuttals."
-        " Find any remaining flaws or add"
-        " final insights."
+        " Review ALL opinions and rebuttals."
+        " Find remaining flaws."
         " Reply in Traditional Chinese."
         " NEVER invent URLs."
+        " Be brief (within 150 words)."
     )
 
     r3_all = (
         "Original question: "
-        + question + NL
-        + search_context + NL
+        + question + NL + search_context + NL
         + "=== Round 1 ===" + NL
         + "Mixtral: " + r1_mixtral + NL
         + "Llama: " + r1_llama + NL
         + "Command R+: " + r1_cohere + NL + NL
-        + "=== Round 2 Rebuttals ===" + NL
+        + "=== Round 2 ===" + NL
         + "Mixtral: " + r2_mixtral + NL
         + "Llama: " + r2_llama + NL
         + "Command R+: " + r2_cohere + NL + NL
-        + "Now give your FINAL rebuttal."
-        + " What did everyone still get wrong?"
-        + " Be brief (within 150 words)."
+        + "Give your FINAL rebuttal."
     )
 
     r3_mixtral, r3_llama, r3_cohere = (
@@ -164,40 +143,33 @@ async def run_debate(question):
         " Synthesize all opinions into one"
         " clear recommendation."
         " Reply in Traditional Chinese."
-        " CRITICAL RULES:"
+        " RULES:"
         " 1. Only include URLs from search"
         " results."
         " 2. If no verified URL exists,"
-        " tell user to search keywords"
-        " on Google themselves."
-        " 3. NEVER make up website names"
-        " or URLs."
-        " 4. If other AIs provided fake"
-        " URLs, ignore those URLs."
+        " tell user to search these"
+        " keywords on Google."
+        " 3. NEVER make up URLs."
+        " 4. Ignore fake URLs from others."
+        " Within 500 words."
     )
 
     r4_prompt = (
         "Question: " + question + NL
         + search_context + NL
-        + "=== Round 1 Opinions ===" + NL
+        + "=== Round 1 ===" + NL
         + "Mixtral: " + r1_mixtral + NL
         + "Llama: " + r1_llama + NL
         + "Command R+: " + r1_cohere + NL + NL
-        + "=== Round 2 Rebuttals ===" + NL
+        + "=== Round 2 ===" + NL
         + "Mixtral: " + r2_mixtral + NL
         + "Llama: " + r2_llama + NL
         + "Command R+: " + r2_cohere + NL + NL
-        + "=== Round 3 Final ===" + NL
+        + "=== Round 3 ===" + NL
         + "Mixtral: " + r3_mixtral + NL
         + "Llama: " + r3_llama + NL
         + "Command R+: " + r3_cohere + NL + NL
-        + "Now give the FINAL ANSWER."
-        + " Only use verified URLs from"
-        + " search results."
-        + " If no URL was found, tell user"
-        + " to search these keywords:"
-        + " and suggest good search terms."
-        + " Within 500 words."
+        + "Give the FINAL ANSWER."
     )
 
     final = await call_llama(r4_prompt, sys4)
