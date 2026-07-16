@@ -1,22 +1,12 @@
 import logging
-import httpx
+from ddgs import DDGS
 
 logger = logging.getLogger(__name__)
 
-SEARCH_URL = (
-    "https://api.search.brave.com"
-    "/res/v1/web/search"
-)
-
-FALLBACK_URL = (
-    "https://html.duckduckgo.com/html/"
-)
-
 async def web_search(query: str) -> str:
-    """Search with DuckDuckGo lite."""
+    """Search with DuckDuckGo."""
     results = []
     try:
-        from ddgs import DDGS
         with DDGS() as ddgs:
             hits = ddgs.text(
                 query,
@@ -57,7 +47,6 @@ async def web_search(query: str) -> str:
 async def check_search_status() -> int:
     """Check if search works."""
     try:
-        from ddgs import DDGS
         with DDGS() as ddgs:
             hits = ddgs.text(
                 "hello",
