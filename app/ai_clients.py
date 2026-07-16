@@ -8,7 +8,9 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 
-async def _groq_call(model, prompt, system_prompt):
+async def _groq_call(
+    model, prompt, system_prompt, max_tok
+):
     """Call Groq API with retry on 429."""
     url = (
         "https://api.groq.com"
@@ -27,14 +29,13 @@ async def _groq_call(model, prompt, system_prompt):
         "model": model,
         "messages": messages,
         "temperature": 0.8,
-        "max_tokens": 1024,
+        "max_tokens": max_tok,
     }
     headers = {
         "Authorization": "Bearer "
         + GROQ_API_KEY,
         "Content-Type": "application/json",
     }
-    last_err = None
     for attempt in range(3):
         try:
             async with httpx.AsyncClient(
@@ -50,7 +51,7 @@ async def _groq_call(model, prompt, system_prompt):
                     + str(resp.status_code)
                 )
                 if resp.status_code == 429:
-                    wait = 3 * (attempt + 1)
+                    wait = 15 * (attempt + 1)
                     print(
                         model + " 429, wait "
                         + str(wait) + "s"
@@ -64,33 +65,44 @@ async def _groq_call(model, prompt, system_prompt):
                     ["message"]["content"]
                 )
         except Exception as e:
-            last_err = e
             if attempt < 2:
-                await asyncio.sleep(2)
-    print(model + " error: " + str(last_err))
+                await asyncio.sleep(3)
+            else:
+                print(
+                    model + " error: "
+                    + str(e)
+                )
     return model + " unavailable"
 
-async def call_mixtral(prompt, system_prompt=""):
+async def call_mixtral(
+    prompt, system_prompt="", max_tok=1024
+):
     return await _groq_call(
         "openai/gpt-oss-120b",
         prompt,
         system_prompt,
+        max_tok,
     )
 
-async def call_llama(prompt, system_prompt=""):
+async def call_llama(
+    prompt, system_prompt="", max_tok=1024
+):
     return await _groq_call(
         "llama-3.3-70b-versatile",
         prompt,
         system_prompt,
+        max_tok,
     )
 
-async def call_cohere(prompt, system_prompt=""):
+async def call_cohere(
+    prompt, system_prompt="", max_tok=1024
+):
     url = "https://api.cohere.com/v1/chat"
     payload = {
         "model": "command-a-03-2025",
         "message": prompt,
         "temperature": 0.8,
-        "max_tokens": 1024,
+        "max_tokens": max_tok,
     }
     if system_prompt:
         payload["preamble"] = system_prompt
