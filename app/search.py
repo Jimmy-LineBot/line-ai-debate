@@ -49,25 +49,19 @@ def extract_keywords(query):
         short = " ".join(parts[:6])
     return short
 
-async def web_search(query):
-    """Search with ddgs metasearch."""
-    short_q = extract_keywords(query)
-    logger.info("Search query: %s", short_q)
-
+def _do_search(query, max_results=5):
+    """Run search with fallback backends."""
     results = []
     backends = ["google", "brave"]
     for be in backends:
         try:
             with DDGS() as ddgs:
                 hits = ddgs.text(
-                    short_q,
-                    max_results=5,
+                    query,
+                    max_results=max_results,
                     backend=be,
                 )
                 if not hits:
-                    logger.warning(
-                        "Search %s: empty", be
-                    )
                     continue
                 for i, h in enumerate(hits, 1):
                     title = h.get("title", "")
@@ -94,12 +88,49 @@ async def web_search(query):
                 be, e,
             )
             continue
+    return results
+
+async def web_search(query):
+    """Search with ddgs metasearch."""
+    short_q = extract_keywords(query)
+    logger.info("Search query: %s", short_q)
+    results = _do_search(short_q)
     if not results:
         logger.warning(
             "No results for: %s", short_q
         )
         return ""
     return chr(10).join(results)
+
+async def web_search_multi(query, n=3):
+    """Search multiple angles for diverse AI."""
+    short_q = extract_keywords(query)
+    logger.info(
+        "Multi-search base: %s", short_q
+    )
+    parts = short_q.split(" ")
+
+    # Generate 3 different queries
+    queries = [short_q]
+    if len(parts) >= 4:
+        q2 = " ".join(parts[:3]) + " " + chr(25512) + chr(34214)
+        queries.append(q2)
+        q3 = " ".join(parts[2:5]) + " " + chr(32178) + chr(36092)
+        queries.append(q3)
+    else:
+        queries.append(short_q + " " + chr(25512) + chr(34214))
+        queries.append(short_q + " " + chr(36092) + chr(20729))
+
+    all_results = []
+    for q in queries[:n]:
+        hits = _do_search(q, max_results=3)
+        if hits:
+            all_results.append(
+                chr(10).join(hits)
+            )
+        else:
+            all_results.append("")
+    return all_results
 
 async def check_search_status():
     """Check if search works."""
