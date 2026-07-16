@@ -2,7 +2,7 @@ import asyncio
 from app.ai_clients import call_mixtral
 from app.ai_clients import call_llama
 from app.ai_clients import call_cohere
-from app.search import web_search
+from app.search import web_search_multi
 
 NL = chr(10)
 SEP = NL + "=" * 20 + NL
@@ -11,73 +11,87 @@ NO_SEARCH_NOTE = (
     "NOTE: No search results found."
     " You MUST NOT invent any URL."
     " If you cannot find a real website,"
-    " say so and suggest search keywords"
-    " the user can try on Google."
+    " say so and suggest search keywords."
     " Do NOT make up store names or links."
 )
 
-async def run_debate(question):
-    search_results = await web_search(
-        question
-    )
-
-    search_context = ""
-    if search_results:
-        search_context = (
+def make_search_ctx(text):
+    """Wrap search results."""
+    if text:
+        return (
             NL
             + "=== Web Search Results ==="
-            + NL + search_results + NL
+            + NL + text + NL
             + "=== End Search Results ==="
-            + NL + NL
+            + NL
             + "IMPORTANT: Only use URLs from"
             + " the search results above."
             + " Do NOT invent URLs." + NL
         )
-    else:
-        search_context = (
-            NL + NO_SEARCH_NOTE + NL
-        )
+    return NL + NO_SEARCH_NOTE + NL
+
+async def run_debate(question):
+    # Search 3 different angles
+    search_list = await web_search_multi(
+        question, n=3
+    )
+    ctx_a = make_search_ctx(search_list[0])
+    ctx_b = make_search_ctx(search_list[1])
+    ctx_c = make_search_ctx(search_list[2])
 
     sys1 = (
         "You are an expert analyst."
         " Always reply in Traditional Chinese."
         " Be specific with details."
-        " IMPORTANT: Only cite URLs that"
-        " appear in the search results."
-        " If no search results are provided,"
-        " say you cannot find verified info."
+        " Only cite URLs from search results."
+        " If no results, say so."
         " NEVER invent or guess URLs."
         " NEVER make up website names."
     )
 
-    r1_prompt = (
-        "Please give your analysis and"
-        " recommendation (within 200 words): "
-        + question + NL + search_context
+    r1_prompt_a = (
+        "Analyze and recommend"
+        " (within 200 words): "
+        + question + NL + ctx_a
+    )
+    r1_prompt_b = (
+        "Analyze and recommend"
+        " (within 200 words): "
+        + question + NL + ctx_b
+    )
+    r1_prompt_c = (
+        "Analyze and recommend"
+        " (within 200 words): "
+        + question + NL + ctx_c
     )
 
     r1_mixtral, r1_llama, r1_cohere = (
         await asyncio.gather(
-            call_mixtral(r1_prompt, sys1),
-            call_llama(r1_prompt, sys1),
-            call_cohere(r1_prompt, sys1),
+            call_mixtral(r1_prompt_a, sys1),
+            call_llama(r1_prompt_b, sys1),
+            call_cohere(r1_prompt_c, sys1),
         )
     )
 
+    # Delay to avoid 429
+    await asyncio.sleep(5)
+
     sys2 = (
         "You are a debate expert."
-        " You MUST disagree or find flaws"
-        " in the other opinions."
+        " You MUST disagree or find flaws."
         " Reply in Traditional Chinese."
         " NEVER invent URLs or store names."
         " If they cited unverified URLs,"
         " call them out."
     )
 
+    all_ctx = make_search_ctx(
+        search_list[0]
+    )
+
     r2_base = (
         "Original question: "
-        + question + NL
-        + search_context + NL
+        + question + NL + all_ctx + NL
     )
 
     r2_mixtral_p = (
@@ -107,6 +121,9 @@ async def run_debate(question):
         )
     )
 
+    # Delay to avoid 429
+    await asyncio.sleep(5)
+
     sys3 = (
         "You are a senior debate expert."
         " Review ALL opinions and rebuttals."
@@ -118,7 +135,7 @@ async def run_debate(question):
 
     r3_all = (
         "Original question: "
-        + question + NL + search_context + NL
+        + question + NL + all_ctx + NL
         + "=== Round 1 ===" + NL
         + "Mixtral: " + r1_mixtral + NL
         + "Llama: " + r1_llama + NL
@@ -138,17 +155,18 @@ async def run_debate(question):
         )
     )
 
+    # Delay before final
+    await asyncio.sleep(3)
+
     sys4 = (
         "You are a final judge."
         " Synthesize all opinions into one"
         " clear recommendation."
         " Reply in Traditional Chinese."
         " RULES:"
-        " 1. Only include URLs from search"
-        " results."
-        " 2. If no verified URL exists,"
-        " tell user to search these"
-        " keywords on Google."
+        " 1. Only include URLs from search."
+        " 2. If no verified URL, suggest"
+        " keywords for user to Google."
         " 3. NEVER make up URLs."
         " 4. Ignore fake URLs from others."
         " Within 500 words."
@@ -156,7 +174,7 @@ async def run_debate(question):
 
     r4_prompt = (
         "Question: " + question + NL
-        + search_context + NL
+        + all_ctx + NL
         + "=== Round 1 ===" + NL
         + "Mixtral: " + r1_mixtral + NL
         + "Llama: " + r1_llama + NL
