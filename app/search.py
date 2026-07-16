@@ -4,34 +4,46 @@ from ddgs import DDGS
 logger = logging.getLogger(__name__)
 
 REMOVE_WORDS = [
-    "請推薦", "請問", "推薦",
-    "我需要", "我想要", "我要",
-    "可以", "最好是", "最好",
-    "要有", "直接給我",
-    "看有沒有", "有沒有",
-    "的是你們推薦的第一名",
-    "要去哪個網站買",
-    "哪個網站", "網站",
-    "直接給我網址",
-    "你們推薦", "推薦的",
+    chr(35531) + chr(25512) + chr(34214),
+    chr(35531) + chr(21839),
+    chr(25512) + chr(34214),
+    chr(25105) + chr(38656) + chr(35201),
+    chr(25105) + chr(24819) + chr(35201),
+    chr(25105) + chr(35201),
+    chr(21487) + chr(20197),
+    chr(26368) + chr(22909) + chr(26159),
+    chr(26368) + chr(22909),
+    chr(35201) + chr(26377),
+    chr(30452) + chr(25509) + chr(32102) + chr(25105),
+    chr(30475) + chr(26377) + chr(27794) + chr(26377),
+    chr(26377) + chr(27794) + chr(26377),
+    chr(21738) + chr(20491) + chr(32178) + chr(31449),
+    chr(35201) + chr(21435) + chr(21738) + chr(20491)
+    + chr(32178) + chr(31449) + chr(36023),
+    chr(32178) + chr(31449),
+    chr(30452) + chr(25509) + chr(32102)
+    + chr(25105) + chr(32178) + chr(22336),
+    chr(20320) + chr(20497) + chr(25512)
+    + chr(34214),
+    chr(25512) + chr(34214) + chr(30340),
 ]
 
-PUNCT = "?!。，,、
-"
+PUNCT_CHARS = [
+    "?", "!", chr(12290), chr(65292),
+    ",", chr(12289), chr(10), chr(65311),
+    chr(65281),
+]
 
 def extract_keywords(query):
     """Shorten query for search."""
     short = query
     for r in REMOVE_WORDS:
         short = short.replace(r, " ")
-    # Remove punctuation
-    for p in PUNCT:
+    for p in PUNCT_CHARS:
         short = short.replace(p, " ")
-    # Collapse spaces
     while "  " in short:
         short = short.replace("  ", " ")
     short = short.strip()
-    # Take first few words if too long
     if len(short) > 40:
         parts = short.split(" ")
         short = " ".join(parts[:6])
