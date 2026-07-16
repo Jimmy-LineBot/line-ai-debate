@@ -2,14 +2,34 @@ import asyncio
 from app.ai_clients import call_mixtral
 from app.ai_clients import call_llama
 from app.ai_clients import call_cohere
+from app.search import web_search
 
 NL = chr(10)
 SEP = NL + "=" * 20 + NL
 
 async def run_debate(question):
-    sys1 = "You are an expert analyst. Always reply in Traditional Chinese. Be specific with details."
+    search_results = await web_search(question)
 
-    r1_prompt = "Please give your analysis and recommendation for this question (within 200 words): " + question
+    search_context = ""
+    if search_results:
+        search_context = (
+            NL + "=== Web Search Results ===" + NL
+            + search_results + NL
+            + "=== End Search Results ===" + NL + NL
+        )
+
+    sys1 = (
+        "You are an expert analyst. Always reply in Traditional Chinese. "
+        "Be specific with details. "
+        "IMPORTANT: Base your answer on the provided search results. "
+        "Do NOT make up information. If you are not sure, say so. "
+        "Cite sources when possible."
+    )
+
+    r1_prompt = (
+        "Please give your analysis and recommendation for this question (within 200 words): "
+        + question + NL + search_context
+    )
 
     r1_mixtral, r1_llama, r1_cohere = await asyncio.gather(
         call_mixtral(r1_prompt, sys1),
@@ -17,9 +37,14 @@ async def run_debate(question):
         call_cohere(r1_prompt, sys1),
     )
 
-    sys2 = "You are a debate expert. You MUST disagree or find flaws in the other opinions. Reply in Traditional Chinese."
+    sys2 = (
+        "You are a debate expert. You MUST disagree or find flaws in the other opinions. "
+        "Reply in Traditional Chinese. "
+        "Base your rebuttal on facts and the search results provided. "
+        "Do NOT make up information."
+    )
 
-    r2_base = "Original question: " + question + NL + NL
+    r2_base = "Original question: " + question + NL + search_context + NL
 
     r2_mixtral_p = (
         r2_base
@@ -49,10 +74,14 @@ async def run_debate(question):
         call_cohere(r2_cohere_p, sys2),
     )
 
-    sys3 = "You are a senior debate expert. Review ALL previous opinions and rebuttals. Find any remaining flaws or add final insights. Reply in Traditional Chinese."
+    sys3 = (
+        "You are a senior debate expert. Review ALL previous opinions and rebuttals. "
+        "Find any remaining flaws or add final insights. Reply in Traditional Chinese. "
+        "Do NOT make up information."
+    )
 
     r3_all = (
-        "Original question: " + question + NL + NL
+        "Original question: " + question + NL + search_context + NL
         + "=== Round 1 ===" + NL
         + "Mixtral: " + r1_mixtral + NL
         + "Llama: " + r1_llama + NL
@@ -70,10 +99,15 @@ async def run_debate(question):
         call_cohere(r3_all, sys3),
     )
 
-    sys4 = "You are a final judge. Synthesize all opinions into one clear recommendation. Reply in Traditional Chinese."
+    sys4 = (
+        "You are a final judge. Synthesize all opinions into one clear recommendation. "
+        "Reply in Traditional Chinese. "
+        "IMPORTANT: Only include information that is supported by the search results or the discussion. "
+        "Do NOT make up product names, prices, or details."
+    )
 
     r4_prompt = (
-        "Question: " + question + NL + NL
+        "Question: " + question + NL + search_context + NL
         + "=== Round 1 Opinions ===" + NL
         + "Mixtral: " + r1_mixtral + NL
         + "Llama: " + r1_llama + NL
@@ -86,7 +120,7 @@ async def run_debate(question):
         + "Mixtral: " + r3_mixtral + NL
         + "Llama: " + r3_llama + NL
         + "Command R+: " + r3_cohere + NL + NL
-        + "Now give the FINAL ANSWER that directly answers the original question. Combine the best parts from all opinions across all 3 rounds. If the question asks for a plan or list, provide the complete plan or list. Do not just say which opinion is better. Give the actual answer the user needs. Within 500 words."
+        + "Now give the FINAL ANSWER that directly answers the original question. Combine the best parts from all opinions across all 3 rounds. If the question asks for a plan or list, provide the complete plan or list. Do not just say which opinion is better. Give the actual answer the user needs. Only include verified information from search results. Within 500 words."
     )
 
     final = await call_llama(r4_prompt, sys4)
