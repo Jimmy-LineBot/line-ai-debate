@@ -15,29 +15,35 @@ async def ai_extract_queries(question):
         "/openai/v1/chat/completions"
     )
     sys_msg = (
-        "You generate Google search queries."
-        " Given a user question, output"
-        " exactly 2 lines:"
-        " Line 1: DETAILED query with all"
-        " key details from the question"
-        " (max 10 words)."
-        " Line 2: BROAD query with only"
-        " the core topic (max 5 words)."
+        "You extract search keywords."
+        " Given a question, output 2 lines."
+        " Line1: ALL important nouns and"
+        " topic words from the question"
+        " plus the word 'recommend' in the"
+        " same language. Max 8 words."
+        " Line2: Only the MAIN subject"
+        " (1-2 words) plus 'recommend'."
         " RULES:"
-        " - Same language as the question."
-        " - No explanation, just 2 lines."
-        " - Add recommendation keyword."
-        " Example input: recommend Taoyuan"
-        " graduation flowers for girls"
-        " under 2500 that last long"
+        " - Remove filler words like"
+        " please, I want, can you, etc."
+        " - Keep product names, locations,"
+        " categories."
+        " - Always end with recommend word."
+        " - Same language as question."
+        " - Do NOT include 'PTT' in output."
+        " Example question: recommend"
+        " traditional iron for kids"
+        " school uniform on PTT"
         " Example output:"
-        " Line1: Taoyuan graduation"
-        " preserved flowers girls recommend"
-        " Line2: graduation flowers recommend"
+        " traditional iron kids uniform"
+        " recommend"
+        " iron recommend"
     )
     messages = [
-        {"role": "system", "content": sys_msg},
-        {"role": "user", "content": question},
+        {"role": "system",
+         "content": sys_msg},
+        {"role": "user",
+         "content": question},
     ]
     payload = {
         "model": "llama-3.1-8b-instant",
@@ -139,11 +145,11 @@ def fallback_keywords(query):
         short = " ".join(parts[:7])
     return short
 
-def _add_site(q, question):
-    """Add site restriction if needed."""
+def _add_ptt(q, question):
+    """Add PTT keyword if user mentions PTT."""
     if "PTT" in question or "ptt" in question:
-        if "site:pttweb.cc" not in q:
-            q = q + " site:pttweb.cc"
+        if "PTT" not in q and "ptt" not in q:
+            q = q + " PTT"
     return q
 
 async def _serpapi_search(query, num=10):
@@ -200,40 +206,52 @@ async def _serpapi_search(query, num=10):
         )
     return results
 
-async def web_search(query):
-    """Search with SerpAPI."""
+async def _search_progressive(question):
+    """Search: detailed first, broad if needed."""
     detailed, broad = (
-        await ai_extract_queries(query)
+        await ai_extract_queries(question)
     )
     if not detailed:
-        detailed = fallback_keywords(query)
+        detailed = fallback_keywords(question)
     if not broad:
         broad = detailed
-    # Try detailed first
-    q = _add_site(detailed, query)
-    logger.info("Search detailed: %s", q)
-    results = await _serpapi_search(q)
-    # If too few, try broad
-    if len(results) < 3 and broad != detailed:
-        q2 = _add_site(broad, query)
-        logger.info("Search broad: %s", q2)
-        more = await _serpapi_search(q2)
-        # Merge without duplicates
-        seen = set()
-        for r in results:
-            parts = r.split(chr(10))
-            if len(parts) >= 2:
-                seen.add(parts[1].strip())
-        for r in more:
-            parts = r.split(chr(10))
-            if len(parts) >= 2:
-                url = parts[1].strip()
-                if url not in seen:
-                    results.append(r)
-                    seen.add(url)
+    # Add PTT if mentioned
+    q1 = _add_ptt(detailed, question)
+    logger.info("Search detailed: %s", q1)
+    results = await _serpapi_search(q1, num=10)
+    # If too few results, try broad query
+    if len(results) < 3:
+        q2 = _add_ptt(broad, question)
+        if q2 != q1:
+            logger.info(
+                "Search broad: %s", q2
+            )
+            more = await _serpapi_search(
+                q2, num=10
+            )
+            # Merge without duplicates
+            seen = set()
+            for r in results:
+                parts = r.split(chr(10))
+                if len(parts) >= 2:
+                    seen.add(
+                        parts[1].strip()
+                    )
+            for r in more:
+                parts = r.split(chr(10))
+                if len(parts) >= 2:
+                    u = parts[1].strip()
+                    if u not in seen:
+                        results.append(r)
+                        seen.add(u)
+    return results
+
+async def web_search(query):
+    """Search with SerpAPI."""
+    results = await _search_progressive(query)
     if not results:
         logger.warning(
-            "No results for: %s", q
+            "No results for query"
         )
         return ""
     logger.info(
@@ -244,37 +262,10 @@ async def web_search(query):
 
 async def web_search_split(query):
     """Search, give all results to each AI."""
-    detailed, broad = (
-        await ai_extract_queries(query)
-    )
-    if not detailed:
-        detailed = fallback_keywords(query)
-    if not broad:
-        broad = detailed
-    # Try detailed first
-    q = _add_site(detailed, query)
-    logger.info("Search detailed: %s", q)
-    results = await _serpapi_search(q, num=10)
-    # If too few, try broad
-    if len(results) < 3 and broad != detailed:
-        q2 = _add_site(broad, query)
-        logger.info("Search broad: %s", q2)
-        more = await _serpapi_search(q2, num=10)
-        seen = set()
-        for r in results:
-            parts = r.split(chr(10))
-            if len(parts) >= 2:
-                seen.add(parts[1].strip())
-        for r in more:
-            parts = r.split(chr(10))
-            if len(parts) >= 2:
-                url = parts[1].strip()
-                if url not in seen:
-                    results.append(r)
-                    seen.add(url)
+    results = await _search_progressive(query)
     if not results:
         logger.warning(
-            "No results for: %s", q
+            "No results for query"
         )
         return ["", "", ""]
     all_text = chr(10).join(results)
