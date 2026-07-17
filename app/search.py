@@ -8,25 +8,32 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY", "")
 SERP_URL = "https://serpapi.com/search"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-async def ai_extract_query(question):
-    """Use AI to generate search query."""
+async def ai_extract_queries(question):
+    """Use AI to generate 2 search queries."""
     url = (
         "https://api.groq.com"
         "/openai/v1/chat/completions"
     )
     sys_msg = (
         "You generate Google search queries."
-        " Given a user question, output ONLY"
-        " a precise Google search query"
-        " (max 8 words) that finds the most"
-        " relevant results."
-        " Add negative keywords with minus"
-        " sign to exclude irrelevant results."
-        " Example: if user asks about"
-        " graduation flowers, add"
-        " -funeral -memorial"
-        " No explanation. Just the query."
-        " Same language as the question."
+        " Given a user question, output"
+        " exactly 2 lines:"
+        " Line 1: DETAILED query with all"
+        " key details from the question"
+        " (max 10 words)."
+        " Line 2: BROAD query with only"
+        " the core topic (max 5 words)."
+        " RULES:"
+        " - Same language as the question."
+        " - No explanation, just 2 lines."
+        " - Add recommendation keyword."
+        " Example input: recommend Taoyuan"
+        " graduation flowers for girls"
+        " under 2500 that last long"
+        " Example output:"
+        " Line1: Taoyuan graduation"
+        " preserved flowers girls recommend"
+        " Line2: graduation flowers recommend"
     )
     messages = [
         {"role": "system", "content": sys_msg},
@@ -36,7 +43,7 @@ async def ai_extract_query(question):
         "model": "llama-3.1-8b-instant",
         "messages": messages,
         "temperature": 0.3,
-        "max_tokens": 60,
+        "max_tokens": 80,
     }
     headers = {
         "Authorization": "Bearer "
@@ -54,19 +61,35 @@ async def ai_extract_query(question):
             )
             if resp.status_code == 200:
                 data = resp.json()
-                q = (
+                text = (
                     data["choices"][0]
                     ["message"]["content"]
-                ).strip().strip('"')
+                ).strip()
+                lines = text.split(chr(10))
+                detailed = lines[0].strip()
+                detailed = detailed.replace(
+                    "Line1:", ""
+                ).replace(
+                    "Line 1:", ""
+                ).strip()
+                broad = ""
+                if len(lines) >= 2:
+                    broad = lines[1].strip()
+                    broad = broad.replace(
+                        "Line2:", ""
+                    ).replace(
+                        "Line 2:", ""
+                    ).strip()
                 logger.info(
-                    "AI query: %s", q
+                    "AI queries: [%s] [%s]",
+                    detailed, broad,
                 )
-                return q
+                return detailed, broad
     except Exception as e:
         logger.warning(
             "AI extract failed: %s", e
         )
-    return None
+    return None, None
 
 def fallback_keywords(query):
     """Fallback: simple keyword extract."""
@@ -115,6 +138,13 @@ def fallback_keywords(query):
         parts = short.split(" ")
         short = " ".join(parts[:7])
     return short
+
+def _add_site(q, question):
+    """Add site restriction if needed."""
+    if "PTT" in question or "ptt" in question:
+        if "site:pttweb.cc" not in q:
+            q = q + " site:pttweb.cc"
+    return q
 
 async def _serpapi_search(query, num=10):
     """Call SerpAPI Google search."""
@@ -172,35 +202,76 @@ async def _serpapi_search(query, num=10):
 
 async def web_search(query):
     """Search with SerpAPI."""
-    q = await ai_extract_query(query)
-    if not q:
-        q = fallback_keywords(query)
-    if "PTT" in query or "ptt" in query:
-        if "site:pttweb.cc" not in q:
-            q = q + " site:pttweb.cc"
-    logger.info("Final search: %s", q)
+    detailed, broad = (
+        await ai_extract_queries(query)
+    )
+    if not detailed:
+        detailed = fallback_keywords(query)
+    if not broad:
+        broad = detailed
+    # Try detailed first
+    q = _add_site(detailed, query)
+    logger.info("Search detailed: %s", q)
     results = await _serpapi_search(q)
+    # If too few, try broad
+    if len(results) < 3 and broad != detailed:
+        q2 = _add_site(broad, query)
+        logger.info("Search broad: %s", q2)
+        more = await _serpapi_search(q2)
+        # Merge without duplicates
+        seen = set()
+        for r in results:
+            parts = r.split(chr(10))
+            if len(parts) >= 2:
+                seen.add(parts[1].strip())
+        for r in more:
+            parts = r.split(chr(10))
+            if len(parts) >= 2:
+                url = parts[1].strip()
+                if url not in seen:
+                    results.append(r)
+                    seen.add(url)
     if not results:
         logger.warning(
             "No results for: %s", q
         )
         return ""
     logger.info(
-        "Search got %d results",
+        "Search total: %d results",
         len(results),
     )
     return chr(10).join(results)
 
 async def web_search_split(query):
     """Search, give all results to each AI."""
-    q = await ai_extract_query(query)
-    if not q:
-        q = fallback_keywords(query)
-    if "PTT" in query or "ptt" in query:
-        if "site:pttweb.cc" not in q:
-            q = q + " site:pttweb.cc"
-    logger.info("Final search: %s", q)
+    detailed, broad = (
+        await ai_extract_queries(query)
+    )
+    if not detailed:
+        detailed = fallback_keywords(query)
+    if not broad:
+        broad = detailed
+    # Try detailed first
+    q = _add_site(detailed, query)
+    logger.info("Search detailed: %s", q)
     results = await _serpapi_search(q, num=10)
+    # If too few, try broad
+    if len(results) < 3 and broad != detailed:
+        q2 = _add_site(broad, query)
+        logger.info("Search broad: %s", q2)
+        more = await _serpapi_search(q2, num=10)
+        seen = set()
+        for r in results:
+            parts = r.split(chr(10))
+            if len(parts) >= 2:
+                seen.add(parts[1].strip())
+        for r in more:
+            parts = r.split(chr(10))
+            if len(parts) >= 2:
+                url = parts[1].strip()
+                if url not in seen:
+                    results.append(r)
+                    seen.add(url)
     if not results:
         logger.warning(
             "No results for: %s", q
@@ -208,7 +279,7 @@ async def web_search_split(query):
         return ["", "", ""]
     all_text = chr(10).join(results)
     logger.info(
-        "Search got %d results",
+        "Search total: %d results",
         len(results),
     )
     return [all_text, all_text, all_text]
