@@ -175,6 +175,9 @@ async def web_search(query):
     q = await ai_extract_query(query)
     if not q:
         q = fallback_keywords(query)
+    if "PTT" in query or "ptt" in query:
+        if "site:pttweb.cc" not in q:
+            q = q + " site:pttweb.cc"
     logger.info("Final search: %s", q)
     results = await _serpapi_search(q)
     if not results:
@@ -193,6 +196,9 @@ async def web_search_split(query):
     q = await ai_extract_query(query)
     if not q:
         q = fallback_keywords(query)
+    if "PTT" in query or "ptt" in query:
+        if "site:pttweb.cc" not in q:
+            q = q + " site:pttweb.cc"
     logger.info("Final search: %s", q)
     results = await _serpapi_search(q, num=10)
     if not results:
@@ -205,8 +211,6 @@ async def web_search_split(query):
         "Search got %d results",
         len(results),
     )
-    # All 3 AIs get same search results
-    # Diversity comes from different prompts
     return [all_text, all_text, all_text]
 
 async def check_search_status():
