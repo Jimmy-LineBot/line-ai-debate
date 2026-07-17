@@ -1,6 +1,5 @@
 import os
 import logging
-import random
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -16,14 +15,18 @@ async def ai_extract_query(question):
         "/openai/v1/chat/completions"
     )
     sys_msg = (
-        "You are a search query generator."
-        " Given a user question,"
-        " output ONLY a short Google search"
-        " query (max 10 words) that would"
-        " find the most relevant results."
+        "You generate Google search queries."
+        " Given a user question, output ONLY"
+        " a precise Google search query"
+        " (max 8 words) that finds the most"
+        " relevant results."
+        " Add negative keywords with minus"
+        " sign to exclude irrelevant results."
+        " Example: if user asks about"
+        " graduation flowers, add"
+        " -funeral -memorial"
         " No explanation. Just the query."
-        " Output in the same language as"
-        " the question."
+        " Same language as the question."
     )
     messages = [
         {"role": "system", "content": sys_msg},
@@ -33,7 +36,7 @@ async def ai_extract_query(question):
         "model": "llama-3.1-8b-instant",
         "messages": messages,
         "temperature": 0.3,
-        "max_tokens": 50,
+        "max_tokens": 60,
     }
     headers = {
         "Authorization": "Bearer "
@@ -113,7 +116,7 @@ def fallback_keywords(query):
         short = " ".join(parts[:7])
     return short
 
-async def _serpapi_search(query, num=30):
+async def _serpapi_search(query, num=10):
     """Call SerpAPI Google search."""
     if not SERPAPI_KEY:
         logger.error("No SERPAPI_KEY set")
@@ -175,77 +178,36 @@ async def web_search(query):
     logger.info("Final search: %s", q)
     results = await _serpapi_search(q)
     if not results:
-        logger.warning("No results for: %s", q)
+        logger.warning(
+            "No results for: %s", q
+        )
         return ""
     logger.info(
-        "Search got %d results", len(results)
+        "Search got %d results",
+        len(results),
     )
     return chr(10).join(results)
 
 async def web_search_split(query):
-    """Search 30 results, random split."""
+    """Search, give all results to each AI."""
     q = await ai_extract_query(query)
     if not q:
         q = fallback_keywords(query)
     logger.info("Final search: %s", q)
-    results = await _serpapi_search(q, num=30)
+    results = await _serpapi_search(q, num=10)
     if not results:
-        logger.warning("No results for: %s", q)
+        logger.warning(
+            "No results for: %s", q
+        )
         return ["", "", ""]
-    shuffled = results[:]
-    random.shuffle(shuffled)
-    size = len(shuffled) // 3
-    group_a = shuffled[:size]
-    group_b = shuffled[size:size * 2]
-    group_c = shuffled[size * 2:]
-    # Re-number each group
-    a_lines = []
-    for i, line in enumerate(group_a, 1):
-        parts = line.split(chr(10), 1)
-        if len(parts) == 2:
-            idx = parts[0].find(". ")
-            new_line = (
-                str(i) + parts[0][idx:]
-                + chr(10) + parts[1]
-            )
-            a_lines.append(new_line)
-        else:
-            a_lines.append(line)
-    b_lines = []
-    for i, line in enumerate(group_b, 1):
-        parts = line.split(chr(10), 1)
-        if len(parts) == 2:
-            idx = parts[0].find(". ")
-            new_line = (
-                str(i) + parts[0][idx:]
-                + chr(10) + parts[1]
-            )
-            b_lines.append(new_line)
-        else:
-            b_lines.append(line)
-    c_lines = []
-    for i, line in enumerate(group_c, 1):
-        parts = line.split(chr(10), 1)
-        if len(parts) == 2:
-            idx = parts[0].find(". ")
-            new_line = (
-                str(i) + parts[0][idx:]
-                + chr(10) + parts[1]
-            )
-            c_lines.append(new_line)
-        else:
-            c_lines.append(line)
-    a = chr(10).join(a_lines)
-    b = chr(10).join(b_lines)
-    c = chr(10).join(c_lines)
+    all_text = chr(10).join(results)
     logger.info(
-        "Split %d: %d/%d/%d",
+        "Search got %d results",
         len(results),
-        len(group_a),
-        len(group_b),
-        len(group_c),
     )
-    return [a, b, c]
+    # All 3 AIs get same search results
+    # Diversity comes from different prompts
+    return [all_text, all_text, all_text]
 
 async def check_search_status():
     """Check if SerpAPI works."""
