@@ -7,9 +7,66 @@ logger = logging.getLogger(__name__)
 
 SERPAPI_KEY = os.getenv("SERPAPI_KEY", "")
 SERP_URL = "https://serpapi.com/search"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-def extract_keywords(query):
-    """Shorten query for search."""
+async def ai_extract_query(question):
+    """Use AI to generate search query."""
+    url = (
+        "https://api.groq.com"
+        "/openai/v1/chat/completions"
+    )
+    sys_msg = (
+        "You are a search query generator."
+        " Given a user question,"
+        " output ONLY a short Google search"
+        " query (max 10 words) that would"
+        " find the most relevant results."
+        " No explanation. Just the query."
+        " Output in the same language as"
+        " the question."
+    )
+    messages = [
+        {"role": "system", "content": sys_msg},
+        {"role": "user", "content": question},
+    ]
+    payload = {
+        "model": "llama-3.1-8b-instant",
+        "messages": messages,
+        "temperature": 0.3,
+        "max_tokens": 50,
+    }
+    headers = {
+        "Authorization": "Bearer "
+        + GROQ_API_KEY,
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(
+            timeout=10
+        ) as client:
+            resp = await client.post(
+                url,
+                json=payload,
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                q = (
+                    data["choices"][0]
+                    ["message"]["content"]
+                ).strip().strip('"')
+                logger.info(
+                    "AI query: %s", q
+                )
+                return q
+    except Exception as e:
+        logger.warning(
+            "AI extract failed: %s", e
+        )
+    return None
+
+def fallback_keywords(query):
+    """Fallback: simple keyword extract."""
     removes = [
         chr(35531) + chr(25512) + chr(34214),
         chr(35531) + chr(21839),
@@ -112,33 +169,29 @@ async def _serpapi_search(query, num=30):
 
 async def web_search(query):
     """Search with SerpAPI."""
-    short_q = extract_keywords(query)
-    logger.info("Search query: %s", short_q)
-    results = await _serpapi_search(short_q)
+    q = await ai_extract_query(query)
+    if not q:
+        q = fallback_keywords(query)
+    logger.info("Final search: %s", q)
+    results = await _serpapi_search(q)
     if not results:
-        logger.warning(
-            "No results for: %s", short_q
-        )
+        logger.warning("No results for: %s", q)
         return ""
     logger.info(
-        "Search got %d results",
-        len(results),
+        "Search got %d results", len(results)
     )
     return chr(10).join(results)
 
 async def web_search_split(query):
-    """Search 30 results, random split to 3 AIs."""
-    short_q = extract_keywords(query)
-    logger.info("Search query: %s", short_q)
-    results = await _serpapi_search(
-        short_q, num=30
-    )
+    """Search 30 results, random split."""
+    q = await ai_extract_query(query)
+    if not q:
+        q = fallback_keywords(query)
+    logger.info("Final search: %s", q)
+    results = await _serpapi_search(q, num=30)
     if not results:
-        logger.warning(
-            "No results for: %s", short_q
-        )
+        logger.warning("No results for: %s", q)
         return ["", "", ""]
-    # Shuffle and split into 3 groups
     shuffled = results[:]
     random.shuffle(shuffled)
     size = len(shuffled) // 3
@@ -150,9 +203,9 @@ async def web_search_split(query):
     for i, line in enumerate(group_a, 1):
         parts = line.split(chr(10), 1)
         if len(parts) == 2:
-            old_num_end = parts[0].find(". ")
+            idx = parts[0].find(". ")
             new_line = (
-                str(i) + parts[0][old_num_end:]
+                str(i) + parts[0][idx:]
                 + chr(10) + parts[1]
             )
             a_lines.append(new_line)
@@ -162,9 +215,9 @@ async def web_search_split(query):
     for i, line in enumerate(group_b, 1):
         parts = line.split(chr(10), 1)
         if len(parts) == 2:
-            old_num_end = parts[0].find(". ")
+            idx = parts[0].find(". ")
             new_line = (
-                str(i) + parts[0][old_num_end:]
+                str(i) + parts[0][idx:]
                 + chr(10) + parts[1]
             )
             b_lines.append(new_line)
@@ -174,9 +227,9 @@ async def web_search_split(query):
     for i, line in enumerate(group_c, 1):
         parts = line.split(chr(10), 1)
         if len(parts) == 2:
-            old_num_end = parts[0].find(". ")
+            idx = parts[0].find(". ")
             new_line = (
-                str(i) + parts[0][old_num_end:]
+                str(i) + parts[0][idx:]
                 + chr(10) + parts[1]
             )
             c_lines.append(new_line)
@@ -186,7 +239,7 @@ async def web_search_split(query):
     b = chr(10).join(b_lines)
     c = chr(10).join(c_lines)
     logger.info(
-        "Split %d results: %d/%d/%d",
+        "Split %d: %d/%d/%d",
         len(results),
         len(group_a),
         len(group_b),
