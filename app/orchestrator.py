@@ -10,7 +10,7 @@ SEP = NL + "=" * 20 + NL
 NO_SEARCH = (
     "NOTE: No search results found."
     " You MUST NOT invent any URL."
-    " Say you cannot find a verified site"
+    " Say you cannot find verified info"
     " and suggest search keywords."
 )
 
@@ -44,13 +44,16 @@ async def run_debate(question):
     sys1 = (
         "You are an expert analyst."
         " Reply in Traditional Chinese."
+        " Based on the search results,"
+        " give a clear recommendation with:"
+        " 1. Your top pick and WHY"
+        " 2. Pros and cons"
+        " 3. Who it is best for"
         " Only cite URLs from search results."
-        " NEVER invent URLs or names."
-        " IMPORTANT: Read the user question"
-        " carefully. If the user says they"
-        " already own something, do NOT"
-        " recommend it again. Only recommend"
-        " NEW options they do not have."
+        " NEVER invent URLs or product names."
+        " If the user mentions they already"
+        " own something, do NOT recommend"
+        " it again."
         " Within 200 words."
     )
 
@@ -58,23 +61,27 @@ async def run_debate(question):
     p_b = question + NL + ctx_b
     p_c = question + NL + ctx_c
 
-    # Round 1: Sequential Groq calls
     r1_mixtral = await call_mixtral(p_a, sys1)
     await asyncio.sleep(3)
     r1_llama = await call_llama(p_b, sys1)
     r1_cohere = await call_cohere(p_c, sys1)
 
-    # Wait for Groq token window
     await asyncio.sleep(20)
 
     sys2 = (
-        "You are a debate expert."
-        " MUST disagree or find flaws."
+        "You are a critical reviewer."
         " Reply in Traditional Chinese."
-        " NEVER invent URLs."
-        " If someone recommended something"
-        " the user already owns, call it out"
-        " as a major flaw."
+        " Review the two opinions below."
+        " For each opinion:"
+        " - If you AGREE, say why and add"
+        "   extra info they missed."
+        " - If you DISAGREE, explain why"
+        "   with evidence from search results."
+        " - Point out any WRONG info"
+        "   (fake URLs, wrong prices, etc)."
+        " - If they recommended something"
+        "   the user already owns, call it out."
+        " Be constructive, not just negative."
         " Within 200 words."
     )
 
@@ -86,22 +93,21 @@ async def run_debate(question):
         question + NL + all_ctx + NL
         + "Opinion A: " + sl + NL
         + "Opinion B: " + sc + NL
-        + "Point out flaws."
+        + "Review these opinions."
     )
     r2p_l = (
         question + NL + all_ctx + NL
         + "Opinion A: " + sm + NL
         + "Opinion B: " + sc + NL
-        + "Point out flaws."
+        + "Review these opinions."
     )
     r2p_c = (
         question + NL + all_ctx + NL
         + "Opinion A: " + sm + NL
         + "Opinion B: " + sl + NL
-        + "Point out flaws."
+        + "Review these opinions."
     )
 
-    # Round 2
     r2_mixtral = await call_mixtral(
         r2p_m, sys2
     )
@@ -112,9 +118,12 @@ async def run_debate(question):
     await asyncio.sleep(20)
 
     sys3 = (
-        "Senior debate expert."
-        " Find remaining flaws."
-        " Reply in Traditional Chinese."
+        "Senior expert. Review all previous"
+        " opinions. Reply in Traditional"
+        " Chinese."
+        " Identify: 1) What everyone agrees"
+        " on 2) Remaining disagreements"
+        " 3) Any missing info."
         " NEVER invent URLs."
         " Within 100 words."
     )
@@ -126,10 +135,9 @@ async def run_debate(question):
         + "R2: " + shorten(r2_mixtral) + " | "
         + shorten(r2_llama) + " | "
         + shorten(r2_cohere) + NL
-        + "Final rebuttal."
+        + "Summarize agreements and gaps."
     )
 
-    # Round 3
     r3_mixtral = await call_mixtral(r3p, sys3)
     await asyncio.sleep(3)
     r3_llama = await call_llama(r3p, sys3)
@@ -138,15 +146,19 @@ async def run_debate(question):
     await asyncio.sleep(20)
 
     sys4 = (
-        "Final judge. Synthesize all into"
-        " one clear recommendation."
+        "Final judge. Give the user a clear,"
+        " actionable answer."
         " Reply in Traditional Chinese."
+        " Format:"
+        " 1. Your #1 recommendation + reason"
+        " 2. Runner-up options"
+        " 3. Key things to watch out for"
         " Only use verified URLs."
-        " If no URL, suggest keywords."
-        " NEVER make up URLs."
-        " CRITICAL: Do NOT recommend"
-        " anything the user already owns."
-        " Only recommend NEW options."
+        " If no URL found, suggest search"
+        " keywords."
+        " NEVER make up URLs or names."
+        " Do NOT recommend anything the user"
+        " already owns."
         " Within 400 words."
     )
 
@@ -161,8 +173,6 @@ async def run_debate(question):
         + shorten(r3_llama) + " | "
         + shorten(r3_cohere) + NL
         + "Give FINAL ANSWER."
-        + " Do NOT include items user"
-        + " already owns."
     )
 
     final = await call_llama(
