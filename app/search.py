@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import httpx
 
@@ -207,7 +208,7 @@ async def _serpapi_search(query, num=10):
     return results
 
 async def _fetch_page(url):
-    """Fetch page text content (first 1500 chars)."""
+    """Fetch page text (first 1500 chars)."""
     try:
         async with httpx.AsyncClient(
             timeout=8,
@@ -225,10 +226,12 @@ async def _fetch_page(url):
             )
             if resp.status_code != 200:
                 return ""
+            content_type = resp.headers.get(
+                "content-type", ""
+            )
+            if "text/html" not in content_type:
+                return ""
             html = resp.text
-            # Simple HTML to text
-            import re
-            # Remove scripts and styles
             html = re.sub(
                 r"<script.*?</script>",
                 "", html, flags=re.DOTALL
@@ -237,21 +240,31 @@ async def _fetch_page(url):
                 r"<style.*?</style>",
                 "", html, flags=re.DOTALL
             )
-            # Remove tags
             text = re.sub(
                 r"<[^>]+>", " ", html
             )
-            # Collapse whitespace
             text = re.sub(
                 r"\s+", " ", text
             ).strip()
-            # Return first 1500 chars
-            return text[:1500]
+            # Remove non-printable chars
+            clean = ""
+            for ch in text:
+                if ord(ch) >= 32:
+                    clean = clean + ch
+            # Detect garbled text
+            bad = 0
+            sample = clean[:200]
+            for ch in sample:
+                if ord(ch) > 65000:
+                    bad = bad + 1
+            if bad > 10:
+                return ""
+            return clean[:1500]
     except Exception:
         return ""
 
 async def _enrich_results(results, top_n=3):
-    """Fetch page content for top N results."""
+    """Fetch page content for top N."""
     for item in results[:top_n]:
         content = await _fetch_page(
             item["url"]
@@ -271,7 +284,6 @@ def _format_results(results):
             + "   " + item["snippet"]
         )
         if item["content"]:
-            # Add first 500 chars of content
             short_content = item["content"]
             if len(short_content) > 500:
                 short_content = (
@@ -312,7 +324,6 @@ async def _search_progressive(question):
                 if r["url"] not in seen:
                     results.append(r)
                     seen.add(r["url"])
-    # Fetch page content for top 3
     if results:
         results = await _enrich_results(
             results, top_n=3
