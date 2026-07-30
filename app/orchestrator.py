@@ -1,200 +1,154 @@
+import os
 import asyncio
-from app.ai_clients import call_mixtral
-from app.ai_clients import call_llama
-from app.ai_clients import call_cohere
-from app.search import web_search_split
+import httpx
+from dotenv import load_dotenv
 
-NL = chr(10)
-SEP = NL + "=" * 20 + NL
+load_dotenv()
 
-NO_SEARCH = (
-    "NOTE: No search results found."
-    " You MUST NOT invent any URL."
-    " Say you cannot find a verified site"
-    " and suggest search keywords."
-)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 
-def wrap_ctx(text):
-    """Wrap search results."""
-    if text:
-        return (
-            NL + "=== Search Results ===" + NL
-            + text + NL
-            + "=== End Results ===" + NL
-            + "Only use URLs above."
-            + " Do NOT invent URLs." + NL
+async def _groq_call(
+    model, prompt, system_prompt, max_tok
+):
+    """Call Groq API with retry on 429."""
+    url = (
+        "https://api.groq.com"
+        "/openai/v1/chat/completions"
+    )
+    messages = []
+    if system_prompt:
+        messages.append(
+            {"role": "system",
+             "content": system_prompt}
         )
-    return NL + NO_SEARCH + NL
+    messages.append(
+        {"role": "user", "content": prompt}
+    )
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.8,
+        "max_tokens": max_tok,
+    }
+    headers = {
+        "Authorization": "Bearer "
+        + GROQ_API_KEY,
+        "Content-Type": "application/json",
+    }
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(
+                timeout=60.0
+            ) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                )
+                print(
+                    model + " status: "
+                    + str(resp.status_code)
+                )
+                if resp.status_code == 429:
+                    wait = 15 * (attempt + 1)
+                    print(
+                        model + " 429, wait "
+                        + str(wait) + "s"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                return (
+                    data["choices"][0]
+                    ["message"]["content"]
+                )
+        except Exception as e:
+            if attempt < 2:
+                await asyncio.sleep(3)
+            else:
+                print(
+                    model + " error: "
+                    + str(e)
+                )
+    return model + " unavailable"
 
-def shorten(text, limit=250):
-    """Shorten text to limit chars."""
-    if not text:
-        return ""
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "..."
-
-async def run_debate(question):
-    parts = await web_search_split(question)
-    ctx_a = wrap_ctx(parts[0])
-    ctx_b = wrap_ctx(parts[1])
-    ctx_c = wrap_ctx(parts[2])
-    all_ctx = wrap_ctx(parts[0])
-
-    sys1 = (
-        "You are an expert analyst."
-        " Reply in Traditional Chinese."
-        " Only cite URLs from search results."
-        " NEVER invent URLs or names."
-        " IMPORTANT: Read the user question"
-        " carefully. If the user says they"
-        " already own something, do NOT"
-        " recommend it again. Only recommend"
-        " NEW options they do not have."
-        " Within 200 words."
+async def call_mixtral(
+    prompt, system_prompt="", max_tok=1500
+):
+    return await _groq_call(
+        "openai/gpt-oss-120b",
+        prompt,
+        system_prompt,
+        max_tok,
     )
 
-    p_a = question + NL + ctx_a
-    p_b = question + NL + ctx_b
-    p_c = question + NL + ctx_c
-
-    # Round 1: Sequential Groq calls
-    r1_mixtral = await call_mixtral(p_a, sys1)
-    await asyncio.sleep(3)
-    r1_llama = await call_llama(p_b, sys1)
-    r1_cohere = await call_cohere(p_c, sys1)
-
-    # Wait for Groq token window
-    await asyncio.sleep(20)
-
-    sys2 = (
-        "You are a debate expert."
-        " MUST disagree or find flaws."
-        " Reply in Traditional Chinese."
-        " NEVER invent URLs."
-        " If someone recommended something"
-        " the user already owns, call it out"
-        " as a major flaw."
-        " Within 200 words."
+async def call_llama(
+    prompt, system_prompt="", max_tok=1500
+):
+    return await _groq_call(
+        "llama-3.3-70b-versatile",
+        prompt,
+        system_prompt,
+        max_tok,
     )
 
-    sm = shorten(r1_mixtral)
-    sl = shorten(r1_llama)
-    sc = shorten(r1_cohere)
-
-    r2p_m = (
-        question + NL + all_ctx + NL
-        + "Opinion A: " + sl + NL
-        + "Opinion B: " + sc + NL
-        + "Point out flaws."
-    )
-    r2p_l = (
-        question + NL + all_ctx + NL
-        + "Opinion A: " + sm + NL
-        + "Opinion B: " + sc + NL
-        + "Point out flaws."
-    )
-    r2p_c = (
-        question + NL + all_ctx + NL
-        + "Opinion A: " + sm + NL
-        + "Opinion B: " + sl + NL
-        + "Point out flaws."
-    )
-
-    # Round 2
-    r2_mixtral = await call_mixtral(
-        r2p_m, sys2
-    )
-    await asyncio.sleep(3)
-    r2_llama = await call_llama(r2p_l, sys2)
-    r2_cohere = await call_cohere(r2p_c, sys2)
-
-    await asyncio.sleep(20)
-
-    sys3 = (
-        "Senior debate expert."
-        " Find remaining flaws."
-        " Reply in Traditional Chinese."
-        " NEVER invent URLs."
-        " Within 100 words."
-    )
-
-    r3p = (
-        question + NL + all_ctx + NL
-        + "R1: " + sm + " | "
-        + sl + " | " + sc + NL
-        + "R2: " + shorten(r2_mixtral) + " | "
-        + shorten(r2_llama) + " | "
-        + shorten(r2_cohere) + NL
-        + "Final rebuttal."
-    )
-
-    # Round 3
-    r3_mixtral = await call_mixtral(r3p, sys3)
-    await asyncio.sleep(3)
-    r3_llama = await call_llama(r3p, sys3)
-    r3_cohere = await call_cohere(r3p, sys3)
-
-    await asyncio.sleep(20)
-
-    sys4 = (
-        "Final judge. Synthesize all into"
-        " one clear recommendation."
-        " Reply in Traditional Chinese."
-        " Only use verified URLs."
-        " If no URL, suggest keywords."
-        " NEVER make up URLs."
-        " CRITICAL: Do NOT recommend"
-        " anything the user already owns."
-        " Only recommend NEW options."
-        " Within 400 words."
-    )
-
-    r4p = (
-        "Q: " + question + NL + all_ctx + NL
-        + "R1: " + sm + " | "
-        + sl + " | " + sc + NL
-        + "R2: " + shorten(r2_mixtral) + " | "
-        + shorten(r2_llama) + " | "
-        + shorten(r2_cohere) + NL
-        + "R3: " + shorten(r3_mixtral) + " | "
-        + shorten(r3_llama) + " | "
-        + shorten(r3_cohere) + NL
-        + "Give FINAL ANSWER."
-        + " Do NOT include items user"
-        + " already owns."
-    )
-
-    final = await call_llama(
-        r4p, sys4, max_tok=1500
-    )
-    if not final or "unavailable" in final:
-        final = await call_mixtral(
-            r4p, sys4, max_tok=1500
-        )
-
-    output = (
-        "AI Discussion Result" + SEP
-        + "Question: " + question + SEP
-        + "Round 1:" + NL + NL
-        + "Mixtral:" + NL + r1_mixtral
-        + NL + NL
-        + "Llama:" + NL + r1_llama
-        + NL + NL
-        + "Command R+:" + NL + r1_cohere + SEP
-        + "Round 2:" + NL + NL
-        + "Mixtral:" + NL + r2_mixtral
-        + NL + NL
-        + "Llama:" + NL + r2_llama
-        + NL + NL
-        + "Command R+:" + NL + r2_cohere + SEP
-        + "Round 3:" + NL + NL
-        + "Mixtral:" + NL + r3_mixtral
-        + NL + NL
-        + "Llama:" + NL + r3_llama
-        + NL + NL
-        + "Command R+:" + NL + r3_cohere + SEP
-        + "FINAL CONCLUSION:" + NL + final
-    )
-
-    return output
+async def call_cohere(
+    prompt, system_prompt="", max_tok=1500
+):
+    """Call Cohere with retry."""
+    url = "https://api.cohere.com/v1/chat"
+    payload = {
+        "model": "command-a-03-2025",
+        "message": prompt,
+        "temperature": 0.8,
+        "max_tokens": max_tok,
+    }
+    if system_prompt:
+        payload["preamble"] = system_prompt
+    headers = {
+        "Authorization": "Bearer "
+        + COHERE_API_KEY,
+        "Content-Type": "application/json",
+    }
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(
+                timeout=60.0
+            ) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                )
+                print(
+                    "Cohere status: "
+                    + str(resp.status_code)
+                )
+                if resp.status_code >= 500:
+                    wait = 5 * (attempt + 1)
+                    print(
+                        "Cohere "
+                        + str(resp.status_code)
+                        + ", wait "
+                        + str(wait) + "s"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                return data["text"]
+        except Exception as e:
+            if attempt < 2:
+                print(
+                    "Cohere retry: "
+                    + str(e)
+                )
+                await asyncio.sleep(5)
+            else:
+                print(
+                    "Cohere error: "
+                    + str(e)
+                )
+    return "Cohere unavailable"
