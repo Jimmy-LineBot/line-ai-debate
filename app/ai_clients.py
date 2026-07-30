@@ -97,6 +97,7 @@ async def call_llama(
 async def call_cohere(
     prompt, system_prompt="", max_tok=1024
 ):
+    """Call Cohere with retry."""
     url = "https://api.cohere.com/v1/chat"
     payload = {
         "model": "command-a-03-2025",
@@ -111,22 +112,43 @@ async def call_cohere(
         + COHERE_API_KEY,
         "Content-Type": "application/json",
     }
-    try:
-        async with httpx.AsyncClient(
-            timeout=60.0
-        ) as client:
-            resp = await client.post(
-                url,
-                json=payload,
-                headers=headers,
-            )
-            print(
-                "Cohere status: "
-                + str(resp.status_code)
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["text"]
-    except Exception as e:
-        print("Cohere error: " + str(e))
-        return "Cohere unavailable"
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(
+                timeout=60.0
+            ) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                )
+                print(
+                    "Cohere status: "
+                    + str(resp.status_code)
+                )
+                if resp.status_code >= 500:
+                    wait = 5 * (attempt + 1)
+                    print(
+                        "Cohere " +
+                        str(resp.status_code)
+                        + ", wait "
+                        + str(wait) + "s"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                return data["text"]
+        except Exception as e:
+            if attempt < 2:
+                print(
+                    "Cohere retry: "
+                    + str(e)
+                )
+                await asyncio.sleep(5)
+            else:
+                print(
+                    "Cohere error: "
+                    + str(e)
+                )
+    return "Cohere unavailable"
