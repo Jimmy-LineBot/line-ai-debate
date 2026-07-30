@@ -146,7 +146,7 @@ def fallback_keywords(query):
     return short
 
 def _add_ptt(q, question):
-    """Add PTT keyword if user mentions PTT."""
+    """Add PTT keyword if mentioned."""
     if "PTT" in question or "ptt" in question:
         if "PTT" not in q and "ptt" not in q:
             q = q + " PTT"
@@ -193,18 +193,96 @@ async def _serpapi_search(query, num=10):
                 )
                 if not url:
                     continue
-                line = (
-                    str(i) + ". "
-                    + title + chr(10)
-                    + "   " + url + chr(10)
-                    + "   " + snippet
-                )
-                results.append(line)
+                results.append({
+                    "i": i,
+                    "title": title,
+                    "url": url,
+                    "snippet": snippet,
+                    "content": "",
+                })
     except Exception as e:
         logger.error(
             "SerpAPI error: %s", e
         )
     return results
+
+async def _fetch_page(url):
+    """Fetch page text content (first 1500 chars)."""
+    try:
+        async with httpx.AsyncClient(
+            timeout=8,
+            follow_redirects=True,
+        ) as client:
+            resp = await client.get(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0"
+                        " (Windows NT 10.0)"
+                        " AppleWebKit/537.36"
+                    ),
+                },
+            )
+            if resp.status_code != 200:
+                return ""
+            html = resp.text
+            # Simple HTML to text
+            import re
+            # Remove scripts and styles
+            html = re.sub(
+                r"<script.*?</script>",
+                "", html, flags=re.DOTALL
+            )
+            html = re.sub(
+                r"<style.*?</style>",
+                "", html, flags=re.DOTALL
+            )
+            # Remove tags
+            text = re.sub(
+                r"<[^>]+>", " ", html
+            )
+            # Collapse whitespace
+            text = re.sub(
+                r"\s+", " ", text
+            ).strip()
+            # Return first 1500 chars
+            return text[:1500]
+    except Exception:
+        return ""
+
+async def _enrich_results(results, top_n=3):
+    """Fetch page content for top N results."""
+    for item in results[:top_n]:
+        content = await _fetch_page(
+            item["url"]
+        )
+        if content:
+            item["content"] = content
+    return results
+
+def _format_results(results):
+    """Format results as text."""
+    lines = []
+    for item in results:
+        line = (
+            str(item["i"]) + ". "
+            + item["title"] + chr(10)
+            + "   " + item["url"] + chr(10)
+            + "   " + item["snippet"]
+        )
+        if item["content"]:
+            # Add first 500 chars of content
+            short_content = item["content"]
+            if len(short_content) > 500:
+                short_content = (
+                    short_content[:500] + "..."
+                )
+            line = line + chr(10) + (
+                "   [Content]: "
+                + short_content
+            )
+        lines.append(line)
+    return chr(10).join(lines)
 
 async def _search_progressive(question):
     """Search: detailed first, broad if needed."""
@@ -215,11 +293,9 @@ async def _search_progressive(question):
         detailed = fallback_keywords(question)
     if not broad:
         broad = detailed
-    # Add PTT if mentioned
     q1 = _add_ptt(detailed, question)
     logger.info("Search detailed: %s", q1)
     results = await _serpapi_search(q1, num=10)
-    # If too few results, try broad query
     if len(results) < 3:
         q2 = _add_ptt(broad, question)
         if q2 != q1:
@@ -229,46 +305,39 @@ async def _search_progressive(question):
             more = await _serpapi_search(
                 q2, num=10
             )
-            # Merge without duplicates
             seen = set()
             for r in results:
-                parts = r.split(chr(10))
-                if len(parts) >= 2:
-                    seen.add(
-                        parts[1].strip()
-                    )
+                seen.add(r["url"])
             for r in more:
-                parts = r.split(chr(10))
-                if len(parts) >= 2:
-                    u = parts[1].strip()
-                    if u not in seen:
-                        results.append(r)
-                        seen.add(u)
+                if r["url"] not in seen:
+                    results.append(r)
+                    seen.add(r["url"])
+    # Fetch page content for top 3
+    if results:
+        results = await _enrich_results(
+            results, top_n=3
+        )
     return results
 
 async def web_search(query):
     """Search with SerpAPI."""
     results = await _search_progressive(query)
     if not results:
-        logger.warning(
-            "No results for query"
-        )
+        logger.warning("No results")
         return ""
     logger.info(
         "Search total: %d results",
         len(results),
     )
-    return chr(10).join(results)
+    return _format_results(results)
 
 async def web_search_split(query):
     """Search, give all results to each AI."""
     results = await _search_progressive(query)
     if not results:
-        logger.warning(
-            "No results for query"
-        )
+        logger.warning("No results")
         return ["", "", ""]
-    all_text = chr(10).join(results)
+    all_text = _format_results(results)
     logger.info(
         "Search total: %d results",
         len(results),
