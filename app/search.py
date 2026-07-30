@@ -203,7 +203,8 @@ async def _serpapi_search(query, num=10):
                 })
     except Exception as e:
         logger.error(
-            "SerpAPI error: %s", e
+            "SerpAPI error: %s %s",
+            type(e).__name__, str(e),
         )
     return results
 
@@ -251,7 +252,7 @@ async def _fetch_page(url):
             for ch in text:
                 if ord(ch) >= 32:
                     clean = clean + ch
-            # Detect garbled text
+            # Detect high unicode garble
             bad = 0
             sample = clean[:200]
             for ch in sample:
@@ -259,6 +260,17 @@ async def _fetch_page(url):
                     bad = bad + 1
             if bad > 10:
                 return ""
+            # Detect repeated chars (AAAA)
+            repeat = 0
+            prev = ""
+            for ch in sample:
+                if ch == prev:
+                    repeat = repeat + 1
+                else:
+                    repeat = 0
+                prev = ch
+                if repeat > 10:
+                    return ""
             return clean[:1500]
     except Exception:
         return ""
