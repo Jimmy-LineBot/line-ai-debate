@@ -75,7 +75,7 @@ async def _groq_call(
     return model + " unavailable"
 
 async def call_mixtral(
-    prompt, system_prompt="", max_tok=1024
+    prompt, system_prompt="", max_tok=1500
 ):
     return await _groq_call(
         "openai/gpt-oss-120b",
@@ -85,7 +85,7 @@ async def call_mixtral(
     )
 
 async def call_llama(
-    prompt, system_prompt="", max_tok=1024
+    prompt, system_prompt="", max_tok=1500
 ):
     return await _groq_call(
         "llama-3.3-70b-versatile",
@@ -95,7 +95,7 @@ async def call_llama(
     )
 
 async def call_cohere(
-    prompt, system_prompt="", max_tok=1024
+    prompt, system_prompt="", max_tok=1500
 ):
     """Call Cohere with retry."""
     url = "https://api.cohere.com/v1/chat"
@@ -129,8 +129,8 @@ async def call_cohere(
                 if resp.status_code >= 500:
                     wait = 5 * (attempt + 1)
                     print(
-                        "Cohere " +
-                        str(resp.status_code)
+                        "Cohere "
+                        + str(resp.status_code)
                         + ", wait "
                         + str(wait) + "s"
                     )
