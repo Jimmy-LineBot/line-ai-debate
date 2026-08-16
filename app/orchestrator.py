@@ -64,9 +64,10 @@ async def run_debate(question):
     r1_mixtral = await call_mixtral(p_a, sys1)
     await asyncio.sleep(3)
     r1_llama = await call_llama(p_b, sys1)
+    await asyncio.sleep(3)
     r1_cohere = await call_cohere(p_c, sys1)
 
-    await asyncio.sleep(20)
+    await asyncio.sleep(5)
 
     sys2 = (
         "You are a critical reviewer."
@@ -113,9 +114,10 @@ async def run_debate(question):
     )
     await asyncio.sleep(3)
     r2_llama = await call_llama(r2p_l, sys2)
+    await asyncio.sleep(3)
     r2_cohere = await call_cohere(r2p_c, sys2)
 
-    await asyncio.sleep(20)
+    await asyncio.sleep(5)
 
     sys3 = (
         "Senior expert. Review all previous"
@@ -141,9 +143,10 @@ async def run_debate(question):
     r3_mixtral = await call_mixtral(r3p, sys3)
     await asyncio.sleep(3)
     r3_llama = await call_llama(r3p, sys3)
+    await asyncio.sleep(3)
     r3_cohere = await call_cohere(r3p, sys3)
 
-    await asyncio.sleep(20)
+    await asyncio.sleep(5)
 
     sys4 = (
         "Final judge. Give the user a clear,"
@@ -187,23 +190,23 @@ async def run_debate(question):
         "AI Discussion Result" + SEP
         + "Question: " + question + SEP
         + "Round 1:" + NL + NL
-        + "Mixtral:" + NL + r1_mixtral
+        + "GPT-OSS-120B:" + NL + r1_mixtral
         + NL + NL
-        + "Llama:" + NL + r1_llama
+        + "Mistral Large:" + NL + r1_llama
         + NL + NL
-        + "Command R+:" + NL + r1_cohere + SEP
+        + "Command A+:" + NL + r1_cohere + SEP
         + "Round 2:" + NL + NL
-        + "Mixtral:" + NL + r2_mixtral
+        + "GPT-OSS-120B:" + NL + r2_mixtral
         + NL + NL
-        + "Llama:" + NL + r2_llama
+        + "Mistral Large:" + NL + r2_llama
         + NL + NL
-        + "Command R+:" + NL + r2_cohere + SEP
+        + "Command A+:" + NL + r2_cohere + SEP
         + "Round 3:" + NL + NL
-        + "Mixtral:" + NL + r3_mixtral
+        + "GPT-OSS-120B:" + NL + r3_mixtral
         + NL + NL
-        + "Llama:" + NL + r3_llama
+        + "Mistral Large:" + NL + r3_llama
         + NL + NL
-        + "Command R+:" + NL + r3_cohere + SEP
+        + "Command A+:" + NL + r3_cohere + SEP
         + "FINAL CONCLUSION:" + NL + final
     )
 
