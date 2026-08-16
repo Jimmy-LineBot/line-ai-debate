@@ -47,7 +47,7 @@ async def ai_extract_queries(question):
          "content": question},
     ]
     payload = {
-        "model": "gpt-oss-20b",
+        "model": "openai/gpt-oss-20b",
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": 80,
