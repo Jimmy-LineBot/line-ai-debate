@@ -88,7 +88,7 @@ async def call_llama(
     prompt, system_prompt="", max_tok=1500
 ):
     return await _groq_call(
-        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "openai/gpt-oss-20b",
         prompt,
         system_prompt,
         max_tok,
@@ -98,15 +98,22 @@ async def call_cohere(
     prompt, system_prompt="", max_tok=1500
 ):
     """Call Cohere with retry."""
-    url = "https://api.cohere.com/v1/chat"
+    url = "https://api.cohere.com/v2/chat"
     payload = {
-        "model": "command-a-03-2025",
-        "message": prompt,
+        "model": "command-a-plus",
+        "messages": [
+            {"role": "user",
+             "content": prompt}
+        ],
         "temperature": 0.8,
         "max_tokens": max_tok,
     }
     if system_prompt:
-        payload["preamble"] = system_prompt
+        payload["messages"].insert(
+            0,
+            {"role": "system",
+             "content": system_prompt}
+        )
     headers = {
         "Authorization": "Bearer "
         + COHERE_API_KEY,
@@ -138,7 +145,15 @@ async def call_cohere(
                     continue
                 resp.raise_for_status()
                 data = resp.json()
-                return data["text"]
+                msg = data.get("message", {})
+                content = msg.get(
+                    "content", [{}]
+                )
+                if content:
+                    return content[0].get(
+                        "text", ""
+                    )
+                return ""
         except Exception as e:
             if attempt < 2:
                 print(
