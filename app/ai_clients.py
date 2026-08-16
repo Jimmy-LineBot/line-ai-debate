@@ -1,5 +1,4 @@
 import os
-import re
 import asyncio
 import httpx
 from dotenv import load_dotenv
@@ -8,16 +7,6 @@ load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
-
-def _strip_thinking(text):
-    """Remove <think>...</think> blocks."""
-    if not text:
-        return text
-    cleaned = re.sub(
-        r"<think>.*?</think>",
-        "", text, flags=re.DOTALL
-    )
-    return cleaned.strip()
 
 async def _groq_call(
     model, prompt, system_prompt, max_tok
@@ -71,11 +60,10 @@ async def _groq_call(
                     continue
                 resp.raise_for_status()
                 data = resp.json()
-                text = (
+                return (
                     data["choices"][0]
                     ["message"]["content"]
                 )
-                return _strip_thinking(text)
         except Exception as e:
             if attempt < 2:
                 await asyncio.sleep(3)
@@ -99,13 +87,10 @@ async def call_mixtral(
 async def call_llama(
     prompt, system_prompt="", max_tok=1500
 ):
-    sys = "/nothink" + chr(10)
-    if system_prompt:
-        sys = sys + system_prompt
     return await _groq_call(
-        "qwen/qwen3.6-27b",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
         prompt,
-        sys,
+        system_prompt,
         max_tok,
     )
 
