@@ -28,6 +28,9 @@ DDG_HEADERS = {
     "x-vqd-accept": "1",
 }
 
+NL = chr(10)
+NL2 = chr(10) + chr(10)
+
 async def _groq_call(
     model, prompt, system_prompt, max_tok
 ):
@@ -99,10 +102,7 @@ async def _ddg_chat(prompt, system_prompt):
     full_prompt = ""
     if system_prompt:
         full_prompt = (
-            system_prompt + "
-
-"
-            + prompt
+            system_prompt + NL2 + prompt
         )
     else:
         full_prompt = prompt
@@ -159,8 +159,7 @@ async def _ddg_chat(prompt, system_prompt):
                 return "DuckDuckGo unavailable"
             # Parse SSE response
             result = ""
-            for line in resp.text.split("
-"):
+            for line in resp.text.split(NL):
                 if line.startswith("data: "):
                     chunk = line[6:]
                     if chunk == "[DONE]":
@@ -172,7 +171,9 @@ async def _ddg_chat(prompt, system_prompt):
                             "message", ""
                         )
                         if msg:
-                            result = result + msg
+                            result = (
+                                result + msg
+                            )
                     except Exception:
                         pass
             if result:
