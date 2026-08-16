@@ -8,6 +8,26 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 
+DDG_STATUS_URL = (
+    "https://duckduckgo.com/duckchat"
+    "/v1/status"
+)
+DDG_CHAT_URL = (
+    "https://duckduckgo.com/duckchat"
+    "/v1/chat"
+)
+DDG_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0)"
+        " AppleWebKit/537.36"
+    ),
+    "Accept": "text/event-stream",
+    "Content-Type": "application/json",
+    "Origin": "https://duckduckgo.com",
+    "Referer": "https://duckduckgo.com/",
+    "x-vqd-accept": "1",
+}
+
 async def _groq_call(
     model, prompt, system_prompt, max_tok
 ):
@@ -74,6 +94,94 @@ async def _groq_call(
                 )
     return model + " unavailable"
 
+async def _ddg_chat(prompt, system_prompt):
+    """Call DuckDuckGo AI Chat (Claude)."""
+    full_prompt = ""
+    if system_prompt:
+        full_prompt = (
+            system_prompt + "
+
+"
+            + prompt
+        )
+    else:
+        full_prompt = prompt
+    try:
+        async with httpx.AsyncClient(
+            timeout=60.0
+        ) as client:
+            # Get VQD token
+            status_resp = await client.get(
+                DDG_STATUS_URL,
+                headers=DDG_HEADERS,
+            )
+            vqd = status_resp.headers.get(
+                "x-vqd-4", ""
+            )
+            if not vqd:
+                print("DDG: no vqd token")
+                return "DuckDuckGo unavailable"
+            # Send chat request
+            chat_headers = {
+                "User-Agent": (
+                    "Mozilla/5.0"
+                    " (Windows NT 10.0)"
+                    " AppleWebKit/537.36"
+                ),
+                "Accept": "text/event-stream",
+                "Content-Type":
+                    "application/json",
+                "Origin":
+                    "https://duckduckgo.com",
+                "Referer":
+                    "https://duckduckgo.com/",
+                "x-vqd-4": vqd,
+            }
+            payload = {
+                "model": (
+                    "claude-3-haiku-20240307"
+                ),
+                "messages": [
+                    {"role": "user",
+                     "content": full_prompt}
+                ],
+            }
+            resp = await client.post(
+                DDG_CHAT_URL,
+                json=payload,
+                headers=chat_headers,
+            )
+            print(
+                "DDG Claude status: "
+                + str(resp.status_code)
+            )
+            if resp.status_code != 200:
+                return "DuckDuckGo unavailable"
+            # Parse SSE response
+            result = ""
+            for line in resp.text.split("
+"):
+                if line.startswith("data: "):
+                    chunk = line[6:]
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        import json
+                        obj = json.loads(chunk)
+                        msg = obj.get(
+                            "message", ""
+                        )
+                        if msg:
+                            result = result + msg
+                    except Exception:
+                        pass
+            if result:
+                return result
+            return "DuckDuckGo unavailable"
+    except Exception as e:
+        print("DDG error: " + str(e))
+        return "DuckDuckGo unavailable"
+
 async def call_mixtral(
     prompt, system_prompt="", max_tok=1500
 ):
@@ -87,11 +195,8 @@ async def call_mixtral(
 async def call_llama(
     prompt, system_prompt="", max_tok=1500
 ):
-    return await _groq_call(
-        "openai/gpt-oss-20b",
-        prompt,
-        system_prompt,
-        max_tok,
+    return await _ddg_chat(
+        prompt, system_prompt
     )
 
 async def call_cohere(
