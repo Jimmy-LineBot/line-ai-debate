@@ -148,10 +148,9 @@ async def call_llama(
                 )
     return "Mistral Large unavailable"
 
-async def call_cohere(
-    prompt, system_prompt="", max_tok=1500
-):
-    """AI 3: Cohere Command A+."""
+async def _cohere_call(model, prompt,
+    system_prompt, max_tok):
+    """Call Cohere with specific model."""
     url = "https://api.cohere.com/v2/chat"
     messages = []
     if system_prompt:
@@ -163,7 +162,7 @@ async def call_cohere(
         {"role": "user", "content": prompt}
     )
     payload = {
-        "model": "command-a-plus-05-2026",
+        "model": model,
         "messages": messages,
         "temperature": 0.8,
         "max_tokens": max_tok,
@@ -173,59 +172,70 @@ async def call_cohere(
         + COHERE_API_KEY,
         "Content-Type": "application/json",
     }
-    for attempt in range(3):
-        try:
-            async with httpx.AsyncClient(
-                timeout=60.0
-            ) as client:
-                resp = await client.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                )
+    try:
+        async with httpx.AsyncClient(
+            timeout=60.0
+        ) as client:
+            resp = await client.post(
+                url,
+                json=payload,
+                headers=headers,
+            )
+            print(
+                "Cohere " + model
+                + " status: "
+                + str(resp.status_code)
+            )
+            if resp.status_code == 404:
                 print(
-                    "Cohere status: "
-                    + str(resp.status_code)
+                    "Cohere 404: model "
+                    + model + " not found"
                 )
-                if resp.status_code == 422:
-                    print(
-                        "Cohere 422: "
-                        + resp.text[:200]
-                    )
-                    return (
-                        "Cohere model error"
-                    )
-                if resp.status_code >= 500:
-                    wait = 5 * (attempt + 1)
-                    print(
-                        "Cohere "
-                        + str(resp.status_code)
-                        + ", wait "
-                        + str(wait) + "s"
-                    )
-                    await asyncio.sleep(wait)
-                    continue
-                resp.raise_for_status()
-                data = resp.json()
-                msg = data.get("message", {})
-                content = msg.get(
-                    "content", [{}]
-                )
-                if content:
-                    return content[0].get(
-                        "text", ""
-                    )
-                return ""
-        except Exception as e:
-            if attempt < 2:
+                return None
+            if resp.status_code == 422:
                 print(
-                    "Cohere retry: "
-                    + str(e)
+                    "Cohere 422: "
+                    + resp.text[:200]
                 )
-                await asyncio.sleep(5)
-            else:
-                print(
-                    "Cohere error: "
-                    + str(e)
+                return None
+            if resp.status_code >= 500:
+                return None
+            resp.raise_for_status()
+            data = resp.json()
+            msg = data.get("message", {})
+            content = msg.get(
+                "content", [{}]
+            )
+            if content:
+                text = content[0].get(
+                    "text", ""
                 )
+                if text:
+                    return text
+            return None
+    except Exception as e:
+        print("Cohere error: " + str(e))
+        return None
+
+async def call_cohere(
+    prompt, system_prompt="", max_tok=1500
+):
+    """AI 3: Cohere Command A+ (fallback)."""
+    models = [
+        "command-a-plus-05-2026",
+        "command-a-03-2025",
+        "command-r-plus-08-2024",
+    ]
+    for attempt in range(2):
+        for model in models:
+            result = await _cohere_call(
+                model, prompt,
+                system_prompt, max_tok,
+            )
+            if result:
+                return result
+            await asyncio.sleep(2)
+        if attempt < 1:
+            print("Cohere retry all models")
+            await asyncio.sleep(5)
     return "Cohere unavailable"
