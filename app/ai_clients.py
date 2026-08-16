@@ -88,7 +88,7 @@ async def call_llama(
     prompt, system_prompt="", max_tok=1500
 ):
     return await _groq_call(
-        "llama-3.3-70b-versatile",
+        "qwen-3.6-27b",
         prompt,
         system_prompt,
         max_tok,
