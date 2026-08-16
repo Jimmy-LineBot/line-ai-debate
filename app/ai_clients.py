@@ -9,7 +9,8 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 
 async def _groq_call(
-    model, prompt, system_prompt, max_tok
+    model, prompt, system_prompt, max_tok,
+    disable_thinking=False
 ):
     """Call Groq API with retry on 429."""
     url = (
@@ -31,6 +32,8 @@ async def _groq_call(
         "temperature": 0.8,
         "max_tokens": max_tok,
     }
+    if disable_thinking:
+        payload["reasoning_format"] = "none"
     headers = {
         "Authorization": "Bearer "
         + GROQ_API_KEY,
@@ -92,6 +95,7 @@ async def call_llama(
         prompt,
         system_prompt,
         max_tok,
+        disable_thinking=True,
     )
 
 async def call_cohere(
